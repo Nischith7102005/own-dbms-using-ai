@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8001';
+const API_BASE_URL = process.env.REACT_APP_BACKEND_URL || process.env.REACT_APP_API_BASE_URL || 'http://localhost:8001';
 
 class ApiService {
   constructor() {
@@ -89,8 +89,8 @@ class ApiService {
       console.error('API Error:', error.response?.data || error.message);
       console.error('Full error:', error);
 
-      if (error.response?.data?.error) {
-        throw new Error(error.response.data.error);
+      if (error.response?.data?.detail) {
+        throw new Error(error.response.data.detail);
       } else if (error.message === 'Network Error') {
         throw new Error('Cannot connect to server. Please check if the backend is running.');
       } else {
@@ -103,7 +103,7 @@ class ApiService {
   async getDatasets() {
     try {
       const response = await this.client.get('/api/datasets');
-      return response.data.datasets;
+      return response.data;
     } catch (error) {
       throw new Error('Failed to get datasets');
     }
@@ -143,7 +143,7 @@ class ApiService {
   async getQueryHistory() {
     try {
       const response = await this.client.get('/api/queries');
-      return response.data.queries;
+      return response.data;
     } catch (error) {
       throw new Error('Failed to get query history');
     }
@@ -167,7 +167,7 @@ class ApiService {
   async getTutorialLevels() {
     try {
       const response = await this.client.get('/api/tutorial/levels');
-      return response.data.levels;
+      return response.data;
     } catch (error) {
       throw new Error('Failed to get tutorial levels');
     }
@@ -176,7 +176,7 @@ class ApiService {
   async getQueryExamples() {
     try {
       const response = await this.client.get('/api/tutorial/examples');
-      return response.data.examples;
+      return response.data;
     } catch (error) {
       throw new Error('Failed to get query examples');
     }
