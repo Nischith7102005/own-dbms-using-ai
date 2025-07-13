@@ -200,7 +200,7 @@ function App() {
         );
       case 'settings':
         return (
-          <Settings
+          <SettingsPage
             {...commonProps}
             config={config}
             onConfigUpdate={setConfig}
