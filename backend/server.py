@@ -18,7 +18,7 @@ import shutil
 load_dotenv()
 
 # Import file_utils for safe dataframe loading
-from backend.file_utils import load_dataframe
+from file_utils import load_dataframe
 
 # Initialize FastAPI app
 app = FastAPI(title="Sankalp DBMS", version="1.0.0")
