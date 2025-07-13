@@ -36,7 +36,7 @@ import DataVisualization from './components/DataVisualization';
 import Tutorial from './components/Tutorial';
 import QueryLibrary from './components/QueryLibrary';
 import DataManager from './components/DataManager';
-import Settings from './components/Settings';
+import SettingsPage from './components/Settings';
 import Navbar from './components/Navbar';
 import LoadingSpinner from './components/LoadingSpinner';
 
