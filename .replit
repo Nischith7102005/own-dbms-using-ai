@@ -36,3 +36,7 @@ args = "cd backend && python server.py"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "cd frontend && npm start"
+
+[[ports]]
+localPort = 3000
+externalPort = 80
