@@ -56,29 +56,46 @@ class ApiService {
   }
 
   // File upload
-  async uploadFile(file, onProgress = null) {
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
+  async uploadFile(file, onProgress) {
+    const formData = new FormData();
+    formData.append('file', file);
 
-      const config = {
+    try {
+      console.log('API Request: POST /api/upload');
+      console.log('File details:', {
+        name: file.name,
+        size: file.size,
+        type: file.type
+      });
+
+      const response = await this.client.post('/api/upload', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
         onUploadProgress: (progressEvent) => {
+          const percentCompleted = Math.round(
+            (progressEvent.loaded * 100) / progressEvent.total
+          );
           if (onProgress) {
-            const percentCompleted = Math.round(
-              (progressEvent.loaded * 100) / progressEvent.total
-            );
             onProgress(percentCompleted);
           }
         },
-      };
+        timeout: 30000, // 30 second timeout
+      });
 
-      const response = await this.client.post('/api/upload', formData, config);
+      console.log('Upload response:', response.data);
       return response.data;
     } catch (error) {
-      throw new Error(error.response?.data?.detail || 'Failed to upload file');
+      console.error('API Error:', error.response?.data || error.message);
+      console.error('Full error:', error);
+
+      if (error.response?.data?.error) {
+        throw new Error(error.response.data.error);
+      } else if (error.message === 'Network Error') {
+        throw new Error('Cannot connect to server. Please check if the backend is running.');
+      } else {
+        throw new Error(error.message || 'Upload failed');
+      }
     }
   }
 

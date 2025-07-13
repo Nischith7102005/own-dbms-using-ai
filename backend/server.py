@@ -26,8 +26,8 @@ app = FastAPI(title="Sankalp DBMS", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -95,16 +95,23 @@ async def get_config():
 @app.post("/api/upload")
 async def upload_file(file: UploadFile = File(...)):
     try:
+        print(f"Received file upload request: {file.filename}")
+        
         # Validate file
         if not file.filename:
-            raise HTTPException(status_code=400, detail="No file provided")
+            print("No filename provided")
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "error": "No file provided"}
+            )
 
         # Check file extension
         file_extension = file.filename.split('.')[-1].lower()
         if file_extension not in ['csv', 'json', 'xlsx', 'xls']:
-            raise HTTPException(
-                status_code=400, 
-                detail=f"Unsupported file format: {file_extension}"
+            print(f"Unsupported file format: {file_extension}")
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "error": f"Unsupported file format: {file_extension}"}
             )
 
         # Generate unique filename
@@ -112,18 +119,37 @@ async def upload_file(file: UploadFile = File(...)):
         filename = f"{file_id}.{file_extension}"
         file_path = UPLOAD_DIR / filename
 
+        print(f"Saving file to: {file_path}")
+
         # Save file
-        async with aiofiles.open(file_path, 'wb') as f:
+        try:
             content = await file.read()
-            await f.write(content)
+            with open(file_path, 'wb') as f:
+                f.write(content)
+            print(f"File saved successfully, size: {len(content)} bytes")
+        except Exception as save_error:
+            print(f"Error saving file: {save_error}")
+            return JSONResponse(
+                status_code=500,
+                content={"success": False, "error": f"Error saving file: {str(save_error)}"}
+            )
 
         # Process file and extract metadata
-        metadata = await process_uploaded_file(file_path, file.filename, file_extension)
+        try:
+            metadata = await process_uploaded_file(file_path, file.filename, file_extension)
+            print(f"File processed successfully, metadata: {metadata}")
+        except Exception as process_error:
+            print(f"Error processing file: {process_error}")
+            return JSONResponse(
+                status_code=500,
+                content={"success": False, "error": f"Error processing file: {str(process_error)}"}
+            )
 
         # Save to database or memory
         dataset_doc = {
             "id": file_id,
             "original_name": file.filename,
+            "filename": file.filename,
             "file_path": str(file_path),
             "file_type": file_extension,
             "upload_time": datetime.now().isoformat(),
@@ -131,50 +157,116 @@ async def upload_file(file: UploadFile = File(...)):
             "status": "processed"
         }
 
-        if db:
-            datasets_collection.insert_one(dataset_doc)
-        else:
-            datasets_storage.append(dataset_doc)
+        try:
+            if db:
+                datasets_collection.insert_one(dataset_doc)
+            else:
+                datasets_storage.append(dataset_doc)
+            print("Dataset saved to storage")
+        except Exception as storage_error:
+            print(f"Error saving to storage: {storage_error}")
 
-        return {
-            "file_id": file_id,
-            "filename": file.filename,
-            "metadata": metadata,
-            "message": "File uploaded and processed successfully"
-        }
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "id": file_id,
+                "file_id": file_id,
+                "filename": file.filename,
+                "original_name": file.filename,
+                "file_type": file_extension,
+                "upload_time": dataset_doc["upload_time"],
+                "metadata": metadata,
+                "status": "processed",
+                "message": "File uploaded and processed successfully"
+            }
+        )
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"Upload error: {str(e)}")
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
+        )
 
 async def process_uploaded_file(file_path: Path, original_name: str, file_type: str) -> Dict:
     """Process uploaded file and extract metadata"""
     try:
+        print(f"Processing file: {file_path}, type: {file_type}")
+        
+        # Read the file based on type
         if file_type == 'csv':
-            df = pd.read_csv(file_path)
+            df = pd.read_csv(file_path, encoding='utf-8')
         elif file_type == 'json':
             df = pd.read_json(file_path)
         elif file_type in ['xlsx', 'xls']:
-            df = pd.read_excel(file_path)
+            df = pd.read_excel(file_path, engine='openpyxl' if file_type == 'xlsx' else 'xlrd')
         else:
             raise ValueError(f"Unsupported file type: {file_type}")
 
-        # Extract metadata
-        metadata = {
-            "rows": len(df),
-            "columns": len(df.columns),
-            "column_names": df.columns.tolist(),
-            "column_types": df.dtypes.astype(str).to_dict(),
-            "sample_data": df.head().to_dict('records'),
-            "missing_values": df.isnull().sum().to_dict(),
-            "file_size": file_path.stat().st_size,
-            "numeric_columns": df.select_dtypes(include=[np.number]).columns.tolist(),
-            "categorical_columns": df.select_dtypes(include=['object']).columns.tolist(),
-            "date_columns": df.select_dtypes(include=['datetime']).columns.tolist()
-        }
+        print(f"File loaded successfully, shape: {df.shape}")
 
-        return metadata
+        # Extract metadata safely
+        try:
+            column_types = {}
+            for col in df.columns:
+                try:
+                    column_types[col] = str(df[col].dtype)
+                except:
+                    column_types[col] = "object"
+
+            sample_data = []
+            try:
+                sample_data = df.head(5).fillna("").to_dict('records')
+                # Convert any numpy types to native Python types
+                for record in sample_data:
+                    for key, value in record.items():
+                        if pd.isna(value) or value is None:
+                            record[key] = ""
+                        elif isinstance(value, (np.int64, np.int32)):
+                            record[key] = int(value)
+                        elif isinstance(value, (np.float64, np.float32)):
+                            record[key] = float(value)
+                        else:
+                            record[key] = str(value)
+            except Exception as sample_error:
+                print(f"Error creating sample data: {sample_error}")
+                sample_data = []
+
+            metadata = {
+                "rows": int(len(df)),
+                "columns": int(len(df.columns)),
+                "column_names": [str(col) for col in df.columns.tolist()],
+                "column_types": column_types,
+                "sample_data": sample_data,
+                "missing_values": {str(col): int(df[col].isnull().sum()) for col in df.columns},
+                "file_size": int(file_path.stat().st_size),
+                "numeric_columns": [str(col) for col in df.select_dtypes(include=[np.number]).columns.tolist()],
+                "categorical_columns": [str(col) for col in df.select_dtypes(include=['object']).columns.tolist()],
+                "date_columns": [str(col) for col in df.select_dtypes(include=['datetime']).columns.tolist()]
+            }
+
+            print(f"Metadata extracted successfully: {metadata}")
+            return metadata
+
+        except Exception as metadata_error:
+            print(f"Error extracting metadata: {metadata_error}")
+            # Return basic metadata if detailed extraction fails
+            return {
+                "rows": int(len(df)),
+                "columns": int(len(df.columns)),
+                "column_names": [str(col) for col in df.columns.tolist()],
+                "column_types": {},
+                "sample_data": [],
+                "missing_values": {},
+                "file_size": int(file_path.stat().st_size),
+                "numeric_columns": [],
+                "categorical_columns": [],
+                "date_columns": []
+            }
 
     except Exception as e:
+        print(f"Error processing file {file_path}: {str(e)}")
         raise Exception(f"Error processing file: {str(e)}")
 
 @app.get("/api/datasets")
