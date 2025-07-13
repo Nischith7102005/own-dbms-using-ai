@@ -1,21 +1,23 @@
-import React, { useState } from 'react';
+
+import React, { useState, useEffect } from 'react';
 import { 
-  FileText, 
   Database, 
-  Trash2, 
-  Edit3, 
-  Eye, 
+  Search, 
+  Filter, 
   Download, 
-  Upload,
-  MoreVertical,
+  Trash2, 
+  Eye, 
+  Edit, 
   Calendar,
+  FileText,
   BarChart3,
-  Search,
-  Filter,
-  SortAsc,
-  SortDesc,
-  RefreshCw
+  AlertCircle,
+  CheckCircle2,
+  X
 } from 'lucide-react';
+import { apiService } from '../services/api';
+import toast from 'react-hot-toast';
+import LoadingSpinner from './LoadingSpinner';
 
 const DataManager = ({ 
   datasets, 
@@ -25,59 +27,17 @@ const DataManager = ({
   onDatasetEdit 
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortBy, setSortBy] = useState('upload_time');
-  const [sortOrder, setSortOrder] = useState('desc');
+  const [filterType, setFilterType] = useState('all');
   const [selectedDatasets, setSelectedDatasets] = useState(new Set());
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [datasetToDelete, setDatasetToDelete] = useState(null);
+  const [loading, setLoading] = useState(false);
 
-  const formatFileSize = (bytes) => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
-
-  const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
-
-  const getFileIcon = (fileType) => {
-    switch (fileType) {
-      case 'csv':
-        return <FileText className="h-5 w-5 text-green-600" />;
-      case 'json':
-        return <Database className="h-5 w-5 text-blue-600" />;
-      case 'xlsx':
-      case 'xls':
-        return <BarChart3 className="h-5 w-5 text-orange-600" />;
-      default:
-        return <FileText className="h-5 w-5 text-gray-600" />;
-    }
-  };
-
-  const filteredDatasets = datasets
-    .filter(dataset => 
-      dataset.original_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      dataset.file_type.toLowerCase().includes(searchTerm.toLowerCase())
-    )
-    .sort((a, b) => {
-      const aValue = a[sortBy];
-      const bValue = b[sortBy];
-      
-      if (sortOrder === 'asc') {
-        return aValue > bValue ? 1 : -1;
-      } else {
-        return aValue < bValue ? 1 : -1;
-      }
-    });
+  const filteredDatasets = datasets.filter(dataset => {
+    const matchesSearch = dataset.original_name.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesFilter = filterType === 'all' || dataset.file_type === filterType;
+    return matchesSearch && matchesFilter;
+  });
 
   const handleSelectDataset = (datasetId) => {
     const newSelected = new Set(selectedDatasets);
@@ -97,45 +57,82 @@ const DataManager = ({
     }
   };
 
-  const handleDeleteDataset = (dataset) => {
+  const handleDeleteDataset = async (dataset) => {
     setDatasetToDelete(dataset);
     setShowDeleteModal(true);
   };
 
-  const confirmDelete = () => {
-    if (datasetToDelete) {
+  const confirmDelete = async () => {
+    if (!datasetToDelete) return;
+
+    setLoading(true);
+    try {
+      await apiService.deleteDataset(datasetToDelete.id);
       onDatasetDelete(datasetToDelete.id);
+      toast.success('Dataset deleted successfully');
       setShowDeleteModal(false);
       setDatasetToDelete(null);
+    } catch (error) {
+      toast.error('Failed to delete dataset');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formatFileSize = (bytes) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  const getFileTypeIcon = (fileType) => {
+    switch (fileType) {
+      case 'csv':
+      case 'xlsx':
+      case 'xls':
+        return <FileText className="h-5 w-5 text-green-600" />;
+      case 'json':
+        return <Database className="h-5 w-5 text-blue-600" />;
+      default:
+        return <FileText className="h-5 w-5 text-gray-600" />;
     }
   };
 
   const DeleteModal = () => (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h3 className="text-lg font-medium text-gray-900">Delete Dataset</h3>
+      <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+        <div className="flex items-center space-x-3 mb-4">
+          <div className="p-2 bg-red-100 rounded-lg">
+            <AlertCircle className="h-6 w-6 text-red-600" />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">Delete Dataset</h3>
+            <p className="text-sm text-gray-600">This action cannot be undone</p>
+          </div>
         </div>
         
-        <div className="p-6">
-          <p className="text-gray-600 mb-4">
-            Are you sure you want to delete "{datasetToDelete?.original_name}"? This action cannot be undone.
-          </p>
-          
-          <div className="flex items-center space-x-4">
-            <button
-              onClick={() => setShowDeleteModal(false)}
-              className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={confirmDelete}
-              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-            >
-              Delete
-            </button>
-          </div>
+        <p className="text-gray-700 mb-6">
+          Are you sure you want to delete <strong>{datasetToDelete?.original_name}</strong>? 
+          All associated queries and visualizations will also be removed.
+        </p>
+        
+        <div className="flex space-x-3">
+          <button
+            onClick={() => setShowDeleteModal(false)}
+            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+            disabled={loading}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={confirmDelete}
+            className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+            disabled={loading}
+          >
+            {loading ? <LoadingSpinner size="sm" variant="white" text="Deleting..." /> : 'Delete'}
+          </button>
         </div>
       </div>
     </div>
@@ -144,57 +141,37 @@ const DataManager = ({
   return (
     <div className="space-y-6">
       {/* Page Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Data Manager</h1>
-          <p className="text-gray-600">Manage your uploaded datasets</p>
-        </div>
-        
-        <div className="flex items-center space-x-4">
-          <span className="text-sm text-gray-500">
-            {datasets.length} dataset{datasets.length !== 1 ? 's' : ''}
-          </span>
-          <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center space-x-2">
-            <Upload className="h-4 w-4" />
-            <span>Upload New</span>
-          </button>
-        </div>
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">Data Manager</h1>
+        <p className="text-gray-600">Manage your uploaded datasets and their metadata</p>
       </div>
 
-      {/* Search and Filter */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        <div className="flex flex-col md:flex-row gap-4">
-          <div className="flex-1">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search datasets..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
-            </div>
+      {/* Search and Filter Bar */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+        <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4">
+          <div className="flex-1 relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search datasets..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
           </div>
           
           <div className="flex items-center space-x-2">
+            <Filter className="h-4 w-4 text-gray-400" />
             <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
+              value={filterType}
+              onChange={(e) => setFilterType(e.target.value)}
               className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             >
-              <option value="upload_time">Upload Date</option>
-              <option value="original_name">Name</option>
-              <option value="file_type">Type</option>
-              <option value="metadata.rows">Rows</option>
+              <option value="all">All Types</option>
+              <option value="csv">CSV</option>
+              <option value="json">JSON</option>
+              <option value="xlsx">Excel</option>
             </select>
-            
-            <button
-              onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
-              className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-            >
-              {sortOrder === 'asc' ? <SortAsc className="h-4 w-4" /> : <SortDesc className="h-4 w-4" />}
-            </button>
           </div>
         </div>
       </div>
@@ -242,44 +219,40 @@ const DataManager = ({
                   Size
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Rows
+                  Rows/Columns
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Columns
+                  Upload Date
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Uploaded
+                  Status
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {filteredDatasets.map((dataset) => (
-                <tr
-                  key={dataset.id}
-                  className={`hover:bg-gray-50 ${
-                    selectedDataset?.id === dataset.id ? 'bg-blue-50' : ''
-                  }`}
+                <tr 
+                  key={dataset.id} 
+                  className={`hover:bg-gray-50 ${selectedDataset?.id === dataset.id ? 'bg-blue-50' : ''}`}
                 >
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center">
+                    <div className="flex items-center space-x-3">
                       <input
                         type="checkbox"
                         checked={selectedDatasets.has(dataset.id)}
                         onChange={() => handleSelectDataset(dataset.id)}
-                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 mr-3"
+                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                       />
                       <div className="flex items-center space-x-3">
-                        {getFileIcon(dataset.file_type)}
+                        {getFileTypeIcon(dataset.file_type)}
                         <div>
-                          <div className="text-sm font-medium text-gray-900 truncate max-w-xs">
+                          <div className="text-sm font-medium text-gray-900">
                             {dataset.original_name}
                           </div>
-                          <div className="text-sm text-gray-500">
-                            {dataset.id}
-                          </div>
+                          <div className="text-sm text-gray-500">{dataset.id}</div>
                         </div>
                       </div>
                     </div>
@@ -293,34 +266,40 @@ const DataManager = ({
                     {formatFileSize(dataset.metadata?.file_size || 0)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {dataset.metadata?.rows?.toLocaleString() || 0}
+                    {dataset.metadata?.rows || 0} × {dataset.metadata?.columns || 0}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {dataset.metadata?.columns || 0}
+                    <div className="flex items-center space-x-1">
+                      <Calendar className="h-4 w-4 text-gray-400" />
+                      <span>{new Date(dataset.upload_time).toLocaleDateString()}</span>
+                    </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {formatDate(dataset.upload_time)}
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center space-x-1">
+                      <CheckCircle2 className="h-4 w-4 text-green-500" />
+                      <span className="text-sm text-green-600">Processed</span>
+                    </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <div className="flex items-center space-x-2">
+                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                    <div className="flex items-center justify-end space-x-2">
                       <button
                         onClick={() => onDatasetSelect(dataset)}
                         className="text-blue-600 hover:text-blue-900"
-                        title="Select dataset"
+                        title="Select Dataset"
                       >
                         <Eye className="h-4 w-4" />
                       </button>
                       <button
                         onClick={() => onDatasetEdit(dataset)}
-                        className="text-green-600 hover:text-green-900"
-                        title="Edit dataset"
+                        className="text-gray-600 hover:text-gray-900"
+                        title="View Details"
                       >
-                        <Edit3 className="h-4 w-4" />
+                        <Edit className="h-4 w-4" />
                       </button>
                       <button
                         onClick={() => handleDeleteDataset(dataset)}
                         className="text-red-600 hover:text-red-900"
-                        title="Delete dataset"
+                        title="Delete Dataset"
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
@@ -330,19 +309,19 @@ const DataManager = ({
               ))}
             </tbody>
           </table>
+          
+          {filteredDatasets.length === 0 && (
+            <div className="text-center py-12">
+              <Database className="mx-auto h-12 w-12 text-gray-300" />
+              <h3 className="mt-2 text-sm font-medium text-gray-900">No datasets found</h3>
+              <p className="mt-1 text-sm text-gray-500">
+                {searchTerm || filterType !== 'all' 
+                  ? 'Try adjusting your search or filter criteria.' 
+                  : 'Upload your first dataset to get started.'}
+              </p>
+            </div>
+          )}
         </div>
-        
-        {filteredDatasets.length === 0 && (
-          <div className="px-6 py-12 text-center">
-            <Database className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-            <p className="text-gray-500">
-              {searchTerm ? 'No datasets match your search' : 'No datasets uploaded yet'}
-            </p>
-            <p className="text-sm text-gray-400 mt-2">
-              {searchTerm ? 'Try adjusting your search terms' : 'Upload your first dataset to get started'}
-            </p>
-          </div>
-        )}
       </div>
 
       {/* Delete Modal */}

@@ -2,3 +2,37 @@ modules = ["nodejs-20", "python-3.12", "web"]
 
 [nix]
 channel = "stable-24_05"
+
+[workflows]
+runButton = "Full Application"
+
+[[workflows.workflow]]
+name = "Start Backend"
+author = 43368478
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd backend && python server.py"
+
+[[workflows.workflow]]
+name = "Start Frontend"
+author = 43368478
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd frontend && npm start"
+
+[[workflows.workflow]]
+name = "Full Application"
+author = 43368478
+mode = "parallel"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd backend && python server.py"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd frontend && npm start"

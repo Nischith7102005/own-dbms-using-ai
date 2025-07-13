@@ -1,3 +1,4 @@
+
 from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
@@ -33,21 +34,34 @@ app.add_middleware(
 
 # MongoDB connection
 MONGO_URL = os.getenv("MONGO_URL", "mongodb://localhost:27017/sankalp_db")
-client = MongoClient(MONGO_URL)
-db = client.sankalp_db
+try:
+    client = MongoClient(MONGO_URL)
+    db = client.sankalp_db
+    # Test connection
+    client.admin.command('ping')
+    print("Connected to MongoDB successfully")
+except Exception as e:
+    print(f"MongoDB connection failed: {e}")
+    # Use in-memory storage as fallback
+    db = None
 
 # Collections
-users_collection = db.users
-datasets_collection = db.datasets
-queries_collection = db.queries
-tutorials_collection = db.tutorials
+if db:
+    users_collection = db.users
+    datasets_collection = db.datasets
+    queries_collection = db.queries
+    tutorials_collection = db.tutorials
+else:
+    # In-memory storage fallback
+    datasets_storage = []
+    queries_storage = []
 
 # Upload directory
 UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "./uploads"))
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 # Security
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 MULTI_USER_MODE = os.getenv("MULTI_USER_MODE", "true").lower() == "true"
 
 # Import query engine and visualization modules
@@ -64,7 +78,11 @@ async def root():
 
 @app.get("/api/health")
 async def health_check():
-    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+    return {
+        "status": "healthy", 
+        "timestamp": datetime.now().isoformat(),
+        "database": "connected" if db else "fallback"
+    }
 
 @app.get("/api/config")
 async def get_config():
@@ -103,18 +121,21 @@ async def upload_file(file: UploadFile = File(...)):
         # Process file and extract metadata
         metadata = await process_uploaded_file(file_path, file.filename, file_extension)
         
-        # Save to database
+        # Save to database or memory
         dataset_doc = {
             "id": file_id,
             "original_name": file.filename,
             "file_path": str(file_path),
             "file_type": file_extension,
-            "upload_time": datetime.now(),
+            "upload_time": datetime.now().isoformat(),
             "metadata": metadata,
             "status": "processed"
         }
         
-        datasets_collection.insert_one(dataset_doc)
+        if db:
+            datasets_collection.insert_one(dataset_doc)
+        else:
+            datasets_storage.append(dataset_doc)
         
         return {
             "file_id": file_id,
@@ -161,7 +182,10 @@ async def process_uploaded_file(file_path: Path, original_name: str, file_type: 
 async def get_datasets():
     """Get all uploaded datasets"""
     try:
-        datasets = list(datasets_collection.find({}, {"_id": 0}))
+        if db:
+            datasets = list(datasets_collection.find({}, {"_id": 0}))
+        else:
+            datasets = datasets_storage
         return {"datasets": datasets}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -170,10 +194,47 @@ async def get_datasets():
 async def get_dataset(dataset_id: str):
     """Get specific dataset by ID"""
     try:
-        dataset = datasets_collection.find_one({"id": dataset_id}, {"_id": 0})
+        if db:
+            dataset = datasets_collection.find_one({"id": dataset_id}, {"_id": 0})
+        else:
+            dataset = next((d for d in datasets_storage if d["id"] == dataset_id), None)
+        
         if not dataset:
             raise HTTPException(status_code=404, detail="Dataset not found")
         return dataset
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/datasets/{dataset_id}")
+async def delete_dataset(dataset_id: str):
+    """Delete a dataset"""
+    try:
+        if db:
+            dataset = datasets_collection.find_one({"id": dataset_id})
+            if not dataset:
+                raise HTTPException(status_code=404, detail="Dataset not found")
+            
+            # Delete file
+            file_path = Path(dataset["file_path"])
+            if file_path.exists():
+                file_path.unlink()
+            
+            # Delete from database
+            datasets_collection.delete_one({"id": dataset_id})
+        else:
+            dataset = next((d for d in datasets_storage if d["id"] == dataset_id), None)
+            if not dataset:
+                raise HTTPException(status_code=404, detail="Dataset not found")
+            
+            # Delete file
+            file_path = Path(dataset["file_path"])
+            if file_path.exists():
+                file_path.unlink()
+            
+            # Remove from storage
+            datasets_storage[:] = [d for d in datasets_storage if d["id"] != dataset_id]
+        
+        return {"message": "Dataset deleted successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -191,7 +252,11 @@ async def execute_query(query_request: Dict):
             raise HTTPException(status_code=400, detail="Dataset ID is required")
         
         # Get dataset
-        dataset = datasets_collection.find_one({"id": dataset_id})
+        if db:
+            dataset = datasets_collection.find_one({"id": dataset_id})
+        else:
+            dataset = next((d for d in datasets_storage if d["id"] == dataset_id), None)
+        
         if not dataset:
             raise HTTPException(status_code=404, detail="Dataset not found")
         
@@ -203,11 +268,15 @@ async def execute_query(query_request: Dict):
             "id": str(uuid.uuid4()),
             "query": query_text,
             "dataset_id": dataset_id,
-            "timestamp": datetime.now(),
+            "timestamp": datetime.now().isoformat(),
             "result": result,
             "execution_time": result.get("execution_time", 0)
         }
-        queries_collection.insert_one(query_doc)
+        
+        if db:
+            queries_collection.insert_one(query_doc)
+        else:
+            queries_storage.append(query_doc)
         
         return result
         
@@ -218,7 +287,10 @@ async def execute_query(query_request: Dict):
 async def get_query_history():
     """Get query history"""
     try:
-        queries = list(queries_collection.find({}, {"_id": 0}).sort("timestamp", -1).limit(50))
+        if db:
+            queries = list(queries_collection.find({}, {"_id": 0}).sort("timestamp", -1).limit(50))
+        else:
+            queries = sorted(queries_storage, key=lambda x: x["timestamp"], reverse=True)[:50]
         return {"queries": queries}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -227,7 +299,48 @@ async def get_query_history():
 async def get_tutorial_levels():
     """Get all tutorial levels"""
     try:
-        levels = list(tutorials_collection.find({}, {"_id": 0}).sort("level", 1))
+        levels = [
+            {
+                "level": 1,
+                "title": "Getting Started with Sankalp",
+                "description": "Learn the basics of natural language querying",
+                "lessons": [
+                    "Introduction to Sankalp Query Language",
+                    "Basic data viewing commands",
+                    "Understanding your dataset"
+                ]
+            },
+            {
+                "level": 2,
+                "title": "Data Filtering and Selection",
+                "description": "Filter and select specific data",
+                "lessons": [
+                    "Simple filtering operations",
+                    "Comparison operators",
+                    "Text-based filtering"
+                ]
+            },
+            {
+                "level": 3,
+                "title": "Data Aggregation",
+                "description": "Perform calculations and summarizations",
+                "lessons": [
+                    "Basic aggregations (sum, average, count)",
+                    "Grouping data",
+                    "Advanced calculations"
+                ]
+            },
+            {
+                "level": 4,
+                "title": "Data Visualization",
+                "description": "Create charts and graphs",
+                "lessons": [
+                    "Creating bar charts",
+                    "Line charts and trends",
+                    "Advanced visualizations"
+                ]
+            }
+        ]
         return {"levels": levels}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -251,7 +364,8 @@ async def get_query_examples():
                 "queries": [
                     "Show records where age is greater than 25",
                     "Filter data for New York city",
-                    "Find all products with price below 100"
+                    "Find all products with price below 100",
+                    "Show data where status equals active"
                 ]
             },
             {
@@ -259,7 +373,8 @@ async def get_query_examples():
                 "queries": [
                     "Calculate average sales by region",
                     "Sum total revenue by month",
-                    "Count customers by category"
+                    "Count customers by category",
+                    "Find maximum price in each category"
                 ]
             },
             {
@@ -267,7 +382,8 @@ async def get_query_examples():
                 "queries": [
                     "Create bar chart of sales by region",
                     "Show line chart of monthly trends",
-                    "Generate pie chart of category distribution"
+                    "Generate pie chart of category distribution",
+                    "Create scatter plot of price vs quantity"
                 ]
             }
         ]
@@ -287,7 +403,11 @@ async def create_visualization(viz_request: Dict):
             raise HTTPException(status_code=400, detail="Dataset ID is required")
         
         # Get dataset
-        dataset = datasets_collection.find_one({"id": dataset_id})
+        if db:
+            dataset = datasets_collection.find_one({"id": dataset_id})
+        else:
+            dataset = next((d for d in datasets_storage if d["id"] == dataset_id), None)
+        
         if not dataset:
             raise HTTPException(status_code=404, detail="Dataset not found")
         
