@@ -1,405 +1,255 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Upload, 
   Database, 
+  FileText, 
   BarChart3, 
-  BookOpen, 
+  Brain, 
   TrendingUp, 
   Users, 
+  Clock, 
   Activity,
-  FileText,
-  Sparkles,
-  ArrowRight,
-  Play,
+  Upload,
+  Search,
+  Plus,
   ChevronRight,
-  Calendar,
-  Clock,
-  CheckCircle,
-  AlertCircle,
-  Info
+  BookOpen,
+  Zap
 } from 'lucide-react';
 
 const Dashboard = ({ 
   datasets, 
-  selectedDataset, 
-  onDatasetSelect, 
   queryHistory, 
-  tutorialProgress, 
-  onViewChange,
+  onViewChange, 
   isOnboarding,
-  onOnboardingComplete
+  onOnboardingComplete 
 }) => {
   const [stats, setStats] = useState({
     totalDatasets: 0,
     totalQueries: 0,
-    avgQueryTime: 0,
-    tutorialCompletion: 0
+    totalRows: 0,
+    recentActivity: []
   });
 
   useEffect(() => {
     // Calculate stats
-    const totalDatasets = datasets.length;
-    const totalQueries = queryHistory.length;
-    const avgQueryTime = queryHistory.length > 0 
-      ? queryHistory.reduce((sum, q) => sum + (q.execution_time || 0), 0) / queryHistory.length
-      : 0;
-    const tutorialCompletion = Object.keys(tutorialProgress).length > 0 
-      ? (Object.values(tutorialProgress).reduce((sum, p) => sum + p, 0) / Object.values(tutorialProgress).length) * 100
-      : 0;
-
+    const totalRows = datasets.reduce((sum, dataset) => sum + (dataset.metadata?.rows || 0), 0);
+    const recentActivity = [...queryHistory].slice(0, 5);
+    
     setStats({
-      totalDatasets,
-      totalQueries,
-      avgQueryTime,
-      tutorialCompletion
+      totalDatasets: datasets.length,
+      totalQueries: queryHistory.length,
+      totalRows,
+      recentActivity
     });
-  }, [datasets, queryHistory, tutorialProgress]);
+  }, [datasets, queryHistory]);
 
-  const recentQueries = queryHistory.slice(0, 5);
-  const recentDatasets = datasets.slice(0, 5);
-
-  const OnboardingFlow = () => (
-    <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg p-6 mb-6 border border-blue-200">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center space-x-3">
-          <div className="p-2 bg-blue-100 rounded-lg">
-            <Sparkles className="h-6 w-6 text-blue-600" />
-          </div>
-          <div>
-            <h3 className="text-lg font-semibold text-blue-900">Welcome to Sankalp DBMS!</h3>
-            <p className="text-sm text-blue-700">Let's get you started with your natural language database</p>
-          </div>
-        </div>
-        <button 
-          onClick={onOnboardingComplete}
-          className="text-sm text-blue-600 hover:text-blue-800"
-        >
-          Skip tour
-        </button>
-      </div>
-      
-      <div className="space-y-4">
-        <div className="flex items-center space-x-4">
-          <div className="flex-shrink-0">
-            <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
-              <span className="text-white font-semibold text-sm">1</span>
-            </div>
-          </div>
-          <div className="flex-1">
-            <h4 className="font-medium text-gray-900">Upload Your Data</h4>
-            <p className="text-sm text-gray-600">Start by uploading a CSV, JSON, or Excel file</p>
-          </div>
-          <button
-            onClick={() => onViewChange('upload')}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center space-x-2"
-          >
-            <Upload className="h-4 w-4" />
-            <span>Upload Data</span>
-          </button>
-        </div>
-        
-        <div className="flex items-center space-x-4">
-          <div className="flex-shrink-0">
-            <div className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center">
-              <span className="text-gray-600 font-semibold text-sm">2</span>
-            </div>
-          </div>
-          <div className="flex-1">
-            <h4 className="font-medium text-gray-400">Learn Sankalp Query Language</h4>
-            <p className="text-sm text-gray-400">Take the tutorial to learn natural language queries</p>
-          </div>
-          <button
-            onClick={() => onViewChange('tutorial')}
-            className="px-4 py-2 bg-gray-300 text-gray-500 rounded-lg cursor-not-allowed"
-            disabled
-          >
-            <BookOpen className="h-4 w-4 mr-2" />
-            Tutorial
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-
-  const StatCard = ({ title, value, icon: Icon, color, description }) => (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+  const StatCard = ({ icon: Icon, label, value, color = "blue" }) => (
+    <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm font-medium text-gray-600">{title}</p>
-          <p className={`text-2xl font-bold ${color}`}>{value}</p>
-          {description && <p className="text-xs text-gray-500 mt-1">{description}</p>}
+          <p className="text-sm text-gray-600">{label}</p>
+          <p className="text-2xl font-bold text-gray-900">{value}</p>
         </div>
-        <div className={`p-3 rounded-lg ${color.replace('text-', 'bg-').replace('-600', '-100')}`}>
-          <Icon className={`h-6 w-6 ${color}`} />
+        <div className={`p-3 rounded-full bg-${color}-100`}>
+          <Icon className={`h-6 w-6 text-${color}-600`} />
         </div>
       </div>
     </div>
   );
 
-  const QuickActions = () => (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-      <button
-        onClick={() => onViewChange('upload')}
-        className="p-4 bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow text-left"
-      >
-        <div className="flex items-center space-x-3">
-          <div className="p-2 bg-blue-100 rounded-lg">
-            <Upload className="h-5 w-5 text-blue-600" />
-          </div>
-          <div>
-            <h3 className="font-medium text-gray-900">Upload Data</h3>
-            <p className="text-sm text-gray-600">Add new dataset</p>
-          </div>
+  const QuickActionCard = ({ icon: Icon, title, description, onClick, color = "blue" }) => (
+    <div 
+      onClick={onClick}
+      className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow cursor-pointer"
+    >
+      <div className="flex items-start space-x-4">
+        <div className={`p-3 rounded-full bg-${color}-100`}>
+          <Icon className={`h-6 w-6 text-${color}-600`} />
         </div>
-      </button>
-      
-      <button
-        onClick={() => onViewChange('query')}
-        className="p-4 bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow text-left"
-      >
-        <div className="flex items-center space-x-3">
-          <div className="p-2 bg-green-100 rounded-lg">
-            <Database className="h-5 w-5 text-green-600" />
-          </div>
-          <div>
-            <h3 className="font-medium text-gray-900">Query Data</h3>
-            <p className="text-sm text-gray-600">Ask questions in plain English</p>
-          </div>
+        <div className="flex-1">
+          <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
+          <p className="text-sm text-gray-600 mt-1">{description}</p>
         </div>
-      </button>
-      
-      <button
-        onClick={() => onViewChange('visualize')}
-        className="p-4 bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow text-left"
-      >
-        <div className="flex items-center space-x-3">
-          <div className="p-2 bg-purple-100 rounded-lg">
-            <BarChart3 className="h-5 w-5 text-purple-600" />
-          </div>
-          <div>
-            <h3 className="font-medium text-gray-900">Visualize</h3>
-            <p className="text-sm text-gray-600">Create charts and graphs</p>
-          </div>
-        </div>
-      </button>
-      
-      <button
-        onClick={() => onViewChange('tutorial')}
-        className="p-4 bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow text-left"
-      >
-        <div className="flex items-center space-x-3">
-          <div className="p-2 bg-orange-100 rounded-lg">
-            <BookOpen className="h-5 w-5 text-orange-600" />
-          </div>
-          <div>
-            <h3 className="font-medium text-gray-900">Learn</h3>
-            <p className="text-sm text-gray-600">Take the tutorial</p>
-          </div>
-        </div>
-      </button>
+        <ChevronRight className="h-5 w-5 text-gray-400" />
+      </div>
     </div>
   );
+
+  if (isOnboarding) {
+    return (
+      <div className="max-w-4xl mx-auto">
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-100 mb-4">
+            <Brain className="h-8 w-8 text-blue-600" />
+          </div>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">Welcome to Sankalp DBMS</h1>
+          <p className="text-gray-600">Your natural language database management system</p>
+        </div>
+
+        <div className="grid md:grid-cols-2 gap-6 mb-8">
+          <QuickActionCard
+            icon={Upload}
+            title="Upload Your First Dataset"
+            description="Start by uploading a CSV, JSON, or Excel file"
+            onClick={() => onViewChange('upload')}
+            color="green"
+          />
+          <QuickActionCard
+            icon={BookOpen}
+            title="Learn Sankalp Language"
+            description="Explore our tutorial to master natural language queries"
+            onClick={() => onViewChange('tutorial')}
+            color="purple"
+          />
+        </div>
+
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
+          <h3 className="text-lg font-semibold text-blue-900 mb-3">Getting Started</h3>
+          <div className="space-y-2 text-sm text-blue-800">
+            <div className="flex items-center space-x-2">
+              <div className="w-2 h-2 bg-blue-600 rounded-full"></div>
+              <span>Upload your data files (CSV, JSON, Excel)</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <div className="w-2 h-2 bg-blue-600 rounded-full"></div>
+              <span>Use natural language to query your data</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <div className="w-2 h-2 bg-blue-600 rounded-full"></div>
+              <span>Create visualizations with simple commands</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
-      {/* Page Header */}
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-          <p className="text-gray-600">Welcome to your natural language database</p>
+          <p className="text-gray-600">Overview of your data and recent activity</p>
         </div>
-        <div className="flex items-center space-x-2 text-sm text-gray-600">
-          <Clock className="h-4 w-4" />
-          <span>{new Date().toLocaleDateString()}</span>
+        <div className="flex space-x-3">
+          <button
+            onClick={() => onViewChange('upload')}
+            className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <Plus className="h-4 w-4" />
+            <span>Upload Data</span>
+          </button>
+          <button
+            onClick={() => onViewChange('query')}
+            className="flex items-center space-x-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
+          >
+            <Search className="h-4 w-4" />
+            <span>Query Data</span>
+          </button>
         </div>
       </div>
 
-      {/* Onboarding Flow */}
-      {isOnboarding && <OnboardingFlow />}
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <StatCard
+          icon={Database}
+          label="Total Datasets"
+          value={stats.totalDatasets}
+          color="blue"
+        />
+        <StatCard
+          icon={FileText}
+          label="Total Queries"
+          value={stats.totalQueries}
+          color="green"
+        />
+        <StatCard
+          icon={BarChart3}
+          label="Total Records"
+          value={stats.totalRows.toLocaleString()}
+          color="purple"
+        />
+        <StatCard
+          icon={Activity}
+          label="Active Sessions"
+          value={1}
+          color="orange"
+        />
+      </div>
 
       {/* Quick Actions */}
-      <QuickActions />
-
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard
-          title="Total Datasets"
-          value={stats.totalDatasets}
-          icon={Database}
-          color="text-blue-600"
-          description="Uploaded files"
-        />
-        <StatCard
-          title="Total Queries"
-          value={stats.totalQueries}
-          icon={Activity}
-          color="text-green-600"
-          description="Executed queries"
-        />
-        <StatCard
-          title="Avg Query Time"
-          value={`${stats.avgQueryTime.toFixed(2)}s`}
-          icon={TrendingUp}
-          color="text-purple-600"
-          description="Query performance"
-        />
-        <StatCard
-          title="Tutorial Progress"
-          value={`${stats.tutorialCompletion.toFixed(0)}%`}
-          icon={BookOpen}
-          color="text-orange-600"
-          description="Learning progress"
-        />
+      <div>
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h2>
+        <div className="grid md:grid-cols-3 gap-4">
+          <QuickActionCard
+            icon={Upload}
+            title="Upload Dataset"
+            description="Add new data files to analyze"
+            onClick={() => onViewChange('upload')}
+            color="blue"
+          />
+          <QuickActionCard
+            icon={Search}
+            title="Query Data"
+            description="Ask questions in natural language"
+            onClick={() => onViewChange('query')}
+            color="green"
+          />
+          <QuickActionCard
+            icon={BarChart3}
+            title="Create Visualization"
+            description="Generate charts and graphs"
+            onClick={() => onViewChange('visualize')}
+            color="purple"
+          />
+        </div>
       </div>
 
       {/* Recent Activity */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Recent Queries */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-medium text-gray-900">Recent Queries</h3>
-              <button
-                onClick={() => onViewChange('query')}
-                className="text-sm text-blue-600 hover:text-blue-800 flex items-center space-x-1"
-              >
-                <span>View all</span>
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-          <div className="divide-y divide-gray-200">
-            {recentQueries.length > 0 ? (
-              recentQueries.map((query, index) => (
-                <div key={index} className="px-6 py-4">
-                  <div className="flex items-start space-x-3">
-                    <div className="flex-shrink-0">
-                      <div className={`w-2 h-2 rounded-full mt-2 ${
-                        query.success ? 'bg-green-500' : 'bg-red-500'
-                      }`} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">
-                        {query.query}
-                      </p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        {new Date(query.timestamp).toLocaleString()} • {query.execution_time?.toFixed(2)}s
-                      </p>
-                    </div>
+      <div className="grid md:grid-cols-2 gap-6">
+        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Datasets</h3>
+          {datasets.length === 0 ? (
+            <p className="text-gray-500 text-sm">No datasets uploaded yet</p>
+          ) : (
+            <div className="space-y-3">
+              {datasets.slice(0, 5).map((dataset) => (
+                <div key={dataset.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                  <div>
+                    <p className="font-medium text-gray-900">{dataset.original_name}</p>
+                    <p className="text-sm text-gray-600">
+                      {dataset.metadata?.rows || 0} rows • {dataset.metadata?.columns || 0} columns
+                    </p>
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    {new Date(dataset.upload_time).toLocaleDateString()}
                   </div>
                 </div>
-              ))
-            ) : (
-              <div className="px-6 py-8 text-center">
-                <Database className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                <p className="text-gray-500">No queries yet</p>
-                <p className="text-sm text-gray-400">Start by uploading data and asking questions</p>
-              </div>
-            )}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* Recent Datasets */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-medium text-gray-900">Recent Datasets</h3>
-              <button
-                onClick={() => onViewChange('data')}
-                className="text-sm text-blue-600 hover:text-blue-800 flex items-center space-x-1"
-              >
-                <span>View all</span>
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-          <div className="divide-y divide-gray-200">
-            {recentDatasets.length > 0 ? (
-              recentDatasets.map((dataset) => (
-                <div key={dataset.id} className="px-6 py-4">
-                  <div className="flex items-center space-x-3">
-                    <div className="flex-shrink-0">
-                      <FileText className="h-5 w-5 text-gray-400" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">
-                        {dataset.original_name}
-                      </p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        {dataset.metadata?.rows} rows • {dataset.metadata?.columns} columns
-                      </p>
-                    </div>
-                    <div className="flex-shrink-0">
-                      <button
-                        onClick={() => onDatasetSelect(dataset)}
-                        className="text-sm text-blue-600 hover:text-blue-800"
-                      >
-                        Select
-                      </button>
-                    </div>
+        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Queries</h3>
+          {queryHistory.length === 0 ? (
+            <p className="text-gray-500 text-sm">No queries executed yet</p>
+          ) : (
+            <div className="space-y-3">
+              {stats.recentActivity.map((query) => (
+                <div key={query.id} className="p-3 bg-gray-50 rounded-lg">
+                  <p className="font-medium text-gray-900 text-sm">{query.query}</p>
+                  <div className="flex items-center justify-between mt-1">
+                    <p className="text-xs text-gray-600">{query.dataset_name}</p>
+                    <p className="text-xs text-gray-500">
+                      {new Date(query.timestamp).toLocaleTimeString()}
+                    </p>
                   </div>
                 </div>
-              ))
-            ) : (
-              <div className="px-6 py-8 text-center">
-                <Upload className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                <p className="text-gray-500">No datasets yet</p>
-                <p className="text-sm text-gray-400">Upload your first dataset to get started</p>
-                <button
-                  onClick={() => onViewChange('upload')}
-                  className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                >
-                  Upload Dataset
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Tips and Getting Started */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        <h3 className="text-lg font-medium text-gray-900 mb-4">Getting Started Tips</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="flex items-start space-x-3">
-            <div className="flex-shrink-0">
-              <CheckCircle className="h-5 w-5 text-green-500 mt-0.5" />
+              ))}
             </div>
-            <div>
-              <h4 className="font-medium text-gray-900">Natural Language Queries</h4>
-              <p className="text-sm text-gray-600">Ask questions like "Show me all sales from last month" or "What's the average age of customers?"</p>
-            </div>
-          </div>
-          
-          <div className="flex items-start space-x-3">
-            <div className="flex-shrink-0">
-              <Info className="h-5 w-5 text-blue-500 mt-0.5" />
-            </div>
-            <div>
-              <h4 className="font-medium text-gray-900">Supported File Types</h4>
-              <p className="text-sm text-gray-600">Upload CSV, JSON, Excel (.xlsx, .xls) files up to 100MB in size</p>
-            </div>
-          </div>
-          
-          <div className="flex items-start space-x-3">
-            <div className="flex-shrink-0">
-              <AlertCircle className="h-5 w-5 text-orange-500 mt-0.5" />
-            </div>
-            <div>
-              <h4 className="font-medium text-gray-900">Tutorial Available</h4>
-              <p className="text-sm text-gray-600">Take the interactive tutorial to learn the Sankalp query language from basic to advanced</p>
-            </div>
-          </div>
-          
-          <div className="flex items-start space-x-3">
-            <div className="flex-shrink-0">
-              <BarChart3 className="h-5 w-5 text-purple-500 mt-0.5" />
-            </div>
-            <div>
-              <h4 className="font-medium text-gray-900">Auto Visualizations</h4>
-              <p className="text-sm text-gray-600">Create charts and graphs automatically from your query results</p>
-            </div>
-          </div>
+          )}
         </div>
       </div>
     </div>
