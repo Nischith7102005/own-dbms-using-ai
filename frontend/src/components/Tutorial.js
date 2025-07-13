@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { 
   BookOpen, 
@@ -13,13 +14,37 @@ import {
   Lightbulb,
   Code,
   BarChart3,
-  Database
+  Database,
+  Copy,
+  CheckCheck
 } from 'lucide-react';
+import { apiService } from '../services/api';
 
 const Tutorial = ({ progress, onProgressUpdate }) => {
   const [currentLevel, setCurrentLevel] = useState(1);
   const [currentLesson, setCurrentLesson] = useState(1);
   const [completedLessons, setCompletedLessons] = useState(new Set());
+  const [queryExamples, setQueryExamples] = useState([]);
+  const [copiedQuery, setCopiedQuery] = useState(null);
+
+  useEffect(() => {
+    loadQueryExamples();
+  }, []);
+
+  const loadQueryExamples = async () => {
+    try {
+      const examples = await apiService.getQueryExamples();
+      setQueryExamples(examples);
+    } catch (error) {
+      console.error('Error loading query examples:', error);
+    }
+  };
+
+  const copyQuery = (query) => {
+    navigator.clipboard.writeText(query);
+    setCopiedQuery(query);
+    setTimeout(() => setCopiedQuery(null), 2000);
+  };
 
   const tutorialLevels = [
     {
@@ -33,19 +58,19 @@ const Tutorial = ({ progress, onProgressUpdate }) => {
           id: 1,
           title: 'What is Sankalp?',
           description: 'Introduction to natural language database queries',
-          content: 'Sankalp is a natural language query system that lets you ask questions about your data in plain English. No need to learn complex SQL syntax!'
+          content: 'Sankalp is a natural language query system that lets you ask questions about your data in plain English. No need to learn complex SQL syntax! Just type what you want to know about your data.'
         },
         {
           id: 2,
-          title: 'Basic Queries',
-          description: 'Learn to ask simple questions',
-          content: 'Start with simple queries like "Show me all data" or "Count total records"'
+          title: 'Basic Data Operations',
+          description: 'Learn fundamental data viewing commands',
+          content: 'Start with simple queries to explore your data. You can view all data, count records, see columns, and get basic information about your dataset.'
         },
         {
           id: 3,
           title: 'Understanding Results',
           description: 'How to interpret query results',
-          content: 'Query results can be tables, metrics, or visualizations depending on what you ask.'
+          content: 'Query results can be tables, metrics, charts, or simple values depending on what you ask. Each result includes helpful information about what was found.'
         }
       ]
     },
@@ -58,15 +83,15 @@ const Tutorial = ({ progress, onProgressUpdate }) => {
       lessons: [
         {
           id: 1,
-          title: 'Basic Filtering',
-          description: 'Filter data with conditions',
-          content: 'Use queries like "Show customers where age is greater than 25" or "Find products with price below 100"'
+          title: 'Comparison Filters',
+          description: 'Filter data with comparison operations',
+          content: 'Use natural language to filter your data with conditions like "greater than", "less than", or "equal to". Perfect for finding specific ranges or exact matches.'
         },
         {
           id: 2,
-          title: 'Text Filtering',
-          description: 'Search text fields',
-          content: 'Filter text data with "Show customers from New York" or "Find products containing smartphone"'
+          title: 'Text Search',
+          description: 'Search within text fields',
+          content: 'Find records containing specific text or phrases. Use "contains" to search within text fields or exact matches for precise filtering.'
         }
       ]
     },
@@ -81,13 +106,13 @@ const Tutorial = ({ progress, onProgressUpdate }) => {
           id: 1,
           title: 'Basic Calculations',
           description: 'Calculate averages, sums, and counts',
-          content: 'Use queries like "Calculate average sales" or "Sum total revenue by region"'
+          content: 'Perform mathematical operations on your data. Calculate averages, sums, find maximum and minimum values, or count records that meet certain criteria.'
         },
         {
           id: 2,
           title: 'Grouping Data',
-          description: 'Group data by categories',
-          content: 'Group your analysis with "Average sales by region" or "Count customers by city"'
+          description: 'Group data by categories for analysis',
+          content: 'Group your analysis by categories or dimensions. For example, calculate average sales by region or count customers by city to understand patterns in your data.'
         }
       ]
     },
@@ -102,13 +127,13 @@ const Tutorial = ({ progress, onProgressUpdate }) => {
           id: 1,
           title: 'Basic Charts',
           description: 'Create bar charts and line graphs',
-          content: 'Create visualizations with "Create bar chart of sales by region" or "Show line chart of monthly trends"'
+          content: 'Visualize your data with charts and graphs. Create bar charts for categorical data, line charts for trends over time, and more.'
         },
         {
           id: 2,
           title: 'Advanced Visualizations',
           description: 'Pie charts and scatter plots',
-          content: 'Use "Generate pie chart of category distribution" or "Create scatter plot of price vs sales"'
+          content: 'Create more sophisticated visualizations like pie charts for distributions and scatter plots to explore relationships between variables.'
         }
       ]
     }
@@ -239,6 +264,40 @@ const Tutorial = ({ progress, onProgressUpdate }) => {
     );
   };
 
+  const QueryExampleCard = ({ category, queries }) => (
+    <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">
+      <div className="px-6 py-4 border-b border-gray-200">
+        <h3 className="text-lg font-medium text-gray-900">{category}</h3>
+      </div>
+      <div className="p-6">
+        <div className="space-y-4">
+          {queries.map((example, index) => (
+            <div key={index} className="bg-gray-50 rounded-lg p-4">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center space-x-2">
+                  <Code className="h-4 w-4 text-blue-600" />
+                  <span className="text-sm font-mono text-gray-700">{example.query}</span>
+                </div>
+                <button
+                  onClick={() => copyQuery(example.query)}
+                  className="p-1 text-gray-400 hover:text-gray-600"
+                  title="Copy query"
+                >
+                  {copiedQuery === example.query ? (
+                    <CheckCheck className="h-4 w-4 text-green-600" />
+                  ) : (
+                    <Copy className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
+              <p className="text-sm text-gray-600">{example.description}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="space-y-6">
       <div>
@@ -249,7 +308,7 @@ const Tutorial = ({ progress, onProgressUpdate }) => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Level Selection */}
         <div className="lg:col-span-1">
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
             <h3 className="text-lg font-medium text-gray-900 mb-4">Learning Path</h3>
             <div className="space-y-4">
               {tutorialLevels.map((level) => (
@@ -262,7 +321,7 @@ const Tutorial = ({ progress, onProgressUpdate }) => {
         {/* Lesson Content */}
         <div className="lg:col-span-2">
           {currentLevelData && currentLessonData ? (
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">
               <div className="px-6 py-4 border-b border-gray-200">
                 <div className="flex items-center justify-between">
                   <div>
@@ -290,19 +349,6 @@ const Tutorial = ({ progress, onProgressUpdate }) => {
                     </p>
                   </div>
                   
-                  {/* Interactive Example */}
-                  <div className="bg-gray-50 rounded-lg p-4">
-                    <h5 className="font-medium text-gray-900 mb-2">Try it yourself:</h5>
-                    <div className="bg-white rounded border border-gray-200 p-3">
-                      <div className="flex items-center space-x-2">
-                        <Code className="h-4 w-4 text-blue-600" />
-                        <span className="text-sm font-mono text-gray-700">
-                          Show me all data
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                  
                   <div className="flex items-center justify-between pt-4">
                     <div className="flex items-center space-x-2">
                       {isLessonCompleted(currentLevel, currentLesson) ? (
@@ -327,11 +373,32 @@ const Tutorial = ({ progress, onProgressUpdate }) => {
               </div>
             </div>
           ) : (
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12 text-center">
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12 text-center mb-6">
               <BookOpen className="h-16 w-16 text-gray-300 mx-auto mb-4" />
               <p className="text-gray-500">Select a level to start learning</p>
             </div>
           )}
+
+          {/* Query Examples */}
+          <div>
+            <h2 className="text-xl font-bold text-gray-900 mb-4">Sankalp Query Language Reference</h2>
+            <p className="text-gray-600 mb-6">Complete list of supported queries and their operations</p>
+            
+            {queryExamples.length > 0 ? (
+              queryExamples.map((category, index) => (
+                <QueryExampleCard
+                  key={index}
+                  category={category.category}
+                  queries={category.queries}
+                />
+              ))
+            ) : (
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8 text-center">
+                <Code className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                <p className="text-gray-500">Loading query examples...</p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

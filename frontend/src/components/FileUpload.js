@@ -59,12 +59,7 @@ const FileUpload = ({ onUpload, datasets, selectedDataset, onDatasetSelect }) =>
       return;
     }
 
-    // Validate file size (100MB limit)
-    const maxSize = 100 * 1024 * 1024; // 100MB
-    if (file.size > maxSize) {
-      toast.error('File size exceeds 100MB limit.');
-      return;
-    }
+    // No file size limits - accept any size file
 
     setIsUploading(true);
     setUploadProgress(0);
@@ -97,8 +92,7 @@ const FileUpload = ({ onUpload, datasets, selectedDataset, onDatasetSelect }) =>
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
       'application/vnd.ms-excel': ['.xls']
     },
-    multiple: false,
-    maxSize: 100 * 1024 * 1024 // 100MB
+    multiple: false
   });
 
   const DataPreview = ({ data, metadata }) => {
@@ -276,7 +270,7 @@ const FileUpload = ({ onUpload, datasets, selectedDataset, onDatasetSelect }) =>
                 <span>•</span>
                 <span>Excel</span>
                 <span>•</span>
-                <span>Up to 100MB</span>
+                <span>No Size Limit</span>
               </div>
             </div>
           </div>

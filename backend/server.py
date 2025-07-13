@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
@@ -99,7 +98,7 @@ async def upload_file(file: UploadFile = File(...)):
         # Validate file
         if not file.filename:
             raise HTTPException(status_code=400, detail="No file provided")
-        
+
         # Check file extension
         file_extension = file.filename.split('.')[-1].lower()
         if file_extension not in ['csv', 'json', 'xlsx', 'xls']:
@@ -107,20 +106,20 @@ async def upload_file(file: UploadFile = File(...)):
                 status_code=400, 
                 detail=f"Unsupported file format: {file_extension}"
             )
-        
+
         # Generate unique filename
         file_id = str(uuid.uuid4())
         filename = f"{file_id}.{file_extension}"
         file_path = UPLOAD_DIR / filename
-        
+
         # Save file
         async with aiofiles.open(file_path, 'wb') as f:
             content = await file.read()
             await f.write(content)
-        
+
         # Process file and extract metadata
         metadata = await process_uploaded_file(file_path, file.filename, file_extension)
-        
+
         # Save to database or memory
         dataset_doc = {
             "id": file_id,
@@ -131,19 +130,19 @@ async def upload_file(file: UploadFile = File(...)):
             "metadata": metadata,
             "status": "processed"
         }
-        
+
         if db:
             datasets_collection.insert_one(dataset_doc)
         else:
             datasets_storage.append(dataset_doc)
-        
+
         return {
             "file_id": file_id,
             "filename": file.filename,
             "metadata": metadata,
             "message": "File uploaded and processed successfully"
         }
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -158,7 +157,7 @@ async def process_uploaded_file(file_path: Path, original_name: str, file_type: 
             df = pd.read_excel(file_path)
         else:
             raise ValueError(f"Unsupported file type: {file_type}")
-        
+
         # Extract metadata
         metadata = {
             "rows": len(df),
@@ -172,9 +171,9 @@ async def process_uploaded_file(file_path: Path, original_name: str, file_type: 
             "categorical_columns": df.select_dtypes(include=['object']).columns.tolist(),
             "date_columns": df.select_dtypes(include=['datetime']).columns.tolist()
         }
-        
+
         return metadata
-        
+
     except Exception as e:
         raise Exception(f"Error processing file: {str(e)}")
 
@@ -198,7 +197,7 @@ async def get_dataset(dataset_id: str):
             dataset = datasets_collection.find_one({"id": dataset_id}, {"_id": 0})
         else:
             dataset = next((d for d in datasets_storage if d["id"] == dataset_id), None)
-        
+
         if not dataset:
             raise HTTPException(status_code=404, detail="Dataset not found")
         return dataset
@@ -213,27 +212,27 @@ async def delete_dataset(dataset_id: str):
             dataset = datasets_collection.find_one({"id": dataset_id})
             if not dataset:
                 raise HTTPException(status_code=404, detail="Dataset not found")
-            
+
             # Delete file
             file_path = Path(dataset["file_path"])
             if file_path.exists():
                 file_path.unlink()
-            
+
             # Delete from database
             datasets_collection.delete_one({"id": dataset_id})
         else:
             dataset = next((d for d in datasets_storage if d["id"] == dataset_id), None)
             if not dataset:
                 raise HTTPException(status_code=404, detail="Dataset not found")
-            
+
             # Delete file
             file_path = Path(dataset["file_path"])
             if file_path.exists():
                 file_path.unlink()
-            
+
             # Remove from storage
             datasets_storage[:] = [d for d in datasets_storage if d["id"] != dataset_id]
-        
+
         return {"message": "Dataset deleted successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -244,25 +243,25 @@ async def execute_query(query_request: Dict):
     try:
         query_text = query_request.get("query")
         dataset_id = query_request.get("dataset_id")
-        
+
         if not query_text:
             raise HTTPException(status_code=400, detail="Query text is required")
-        
+
         if not dataset_id:
             raise HTTPException(status_code=400, detail="Dataset ID is required")
-        
+
         # Get dataset
         if db:
             dataset = datasets_collection.find_one({"id": dataset_id})
         else:
             dataset = next((d for d in datasets_storage if d["id"] == dataset_id), None)
-        
+
         if not dataset:
             raise HTTPException(status_code=404, detail="Dataset not found")
-        
+
         # Execute query
         result = await query_engine.execute_query(query_text, dataset)
-        
+
         # Save query to history
         query_doc = {
             "id": str(uuid.uuid4()),
@@ -272,14 +271,14 @@ async def execute_query(query_request: Dict):
             "result": result,
             "execution_time": result.get("execution_time", 0)
         }
-        
+
         if db:
             queries_collection.insert_one(query_doc)
         else:
             queries_storage.append(query_doc)
-        
+
         return result
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -398,24 +397,24 @@ async def create_visualization(viz_request: Dict):
         dataset_id = viz_request.get("dataset_id")
         chart_type = viz_request.get("chart_type", "bar")
         config = viz_request.get("config", {})
-        
+
         if not dataset_id:
             raise HTTPException(status_code=400, detail="Dataset ID is required")
-        
+
         # Get dataset
         if db:
             dataset = datasets_collection.find_one({"id": dataset_id})
         else:
             dataset = next((d for d in datasets_storage if d["id"] == dataset_id), None)
-        
+
         if not dataset:
             raise HTTPException(status_code=404, detail="Dataset not found")
-        
+
         # Create visualization
         result = await viz_engine.create_visualization(dataset, chart_type, config)
-        
+
         return result
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

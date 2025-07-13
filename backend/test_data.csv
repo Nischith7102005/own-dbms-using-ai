@@ -1,12 +1,12 @@
 
-name,age,city,salary,department,join_date,performance_score
-John Doe,28,New York,75000,Engineering,2020-01-15,8.5
-Jane Smith,32,San Francisco,85000,Marketing,2019-03-20,9.2
-Mike Johnson,45,Chicago,95000,Sales,2018-07-10,7.8
-Sarah Wilson,29,Boston,70000,Engineering,2021-02-28,8.9
-David Brown,38,Seattle,110000,Engineering,2017-11-05,9.5
-Lisa Davis,26,Austin,65000,Marketing,2022-01-10,8.1
-Tom Anderson,41,Denver,88000,Sales,2019-09-15,8.7
-Emily Taylor,33,Portland,92000,Engineering,2020-06-22,9.0
-Chris Martin,27,Miami,68000,Marketing,2021-08-14,7.9
-Amanda Lee,35,Phoenix,98000,Sales,2018-12-03,8.4
+id,name,age,city,salary,department,status
+1,John Smith,28,New York,75000,Engineering,active
+2,Sarah Johnson,32,Los Angeles,85000,Marketing,active
+3,Mike Chen,25,Chicago,65000,Engineering,inactive
+4,Emily Davis,29,Houston,70000,Sales,active
+5,David Wilson,35,Phoenix,90000,Management,active
+6,Lisa Brown,27,Philadelphia,68000,Marketing,active
+7,James Taylor,31,San Antonio,72000,Sales,active
+8,Maria Garcia,26,San Diego,63000,Engineering,inactive
+9,Robert Miller,33,Dallas,88000,Management,active
+10,Jennifer Lee,30,San Jose,78000,Engineering,active

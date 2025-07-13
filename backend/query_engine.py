@@ -1,12 +1,10 @@
-import re
+
 import pandas as pd
 import numpy as np
-from typing import Dict, List, Any, Optional
+import re
+from typing import Dict, Any, List, Optional
 from datetime import datetime
 import json
-from textblob import TextBlob
-from fuzzywuzzy import fuzz
-import asyncio
 
 class SankalpQueryEngine:
     """
@@ -17,141 +15,96 @@ class SankalpQueryEngine:
     def __init__(self):
         self.query_patterns = {
             # Basic operations
-            'show_all': [r'show\s+(?:me\s+)?all', r'display\s+(?:all\s+)?(?:data|records)', r'select\s+all'],
+            'show_all': [r'show\s+(?:me\s+)?all\s+(?:data|records)?', r'display\s+(?:all\s+)?(?:data|records)', r'select\s+all'],
             'show_first': [r'show\s+(?:me\s+)?(?:first\s+|top\s+)?(\d+)', r'display\s+(?:first\s+|top\s+)?(\d+)'],
+            'show_last': [r'show\s+(?:me\s+)?(?:last\s+|bottom\s+)?(\d+)', r'display\s+(?:last\s+|bottom\s+)?(\d+)'],
             'count': [r'count\s+(?:total\s+)?(?:records|rows)', r'how\s+many\s+(?:records|rows)'],
-            'columns': [r'show\s+(?:me\s+)?columns?', r'what\s+(?:are\s+)?(?:the\s+)?columns?'],
+            'columns': [r'show\s+(?:me\s+)?columns?', r'what\s+(?:are\s+)?(?:the\s+)?columns?', r'list\s+columns?'],
+            'describe': [r'describe\s+(?:the\s+)?data', r'summary\s+of\s+data', r'data\s+info'],
             
             # Filtering
             'filter_greater': [r'where\s+(\w+)\s+(?:is\s+)?(?:greater\s+than|>)\s+(\d+\.?\d*)', 
-                              r'(\w+)\s+(?:greater\s+than|>)\s+(\d+\.?\d*)'],
+                              r'(\w+)\s+(?:greater\s+than|>)\s+(\d+\.?\d*)',
+                              r'filter\s+(\w+)\s+(?:greater\s+than|>)\s+(\d+\.?\d*)'],
             'filter_less': [r'where\s+(\w+)\s+(?:is\s+)?(?:less\s+than|<)\s+(\d+\.?\d*)',
-                           r'(\w+)\s+(?:less\s+than|<)\s+(\d+\.?\d*)'],
-            'filter_equal': [r'where\s+(\w+)\s+(?:is\s+)?(?:equal\s+to|=)\s+["\']?([^"\']+)["\']?',
-                            r'(\w+)\s+(?:equal\s+to|=)\s+["\']?([^"\']+)["\']?'],
+                           r'(\w+)\s+(?:less\s+than|<)\s+(\d+\.?\d*)',
+                           r'filter\s+(\w+)\s+(?:less\s+than|<)\s+(\d+\.?\d*)'],
+            'filter_equal': [r'where\s+(\w+)\s+(?:is\s+)?(?:equal\s+to|equals?|=)\s+["\']?([^"\']+)["\']?',
+                            r'(\w+)\s+(?:equal\s+to|equals?|=)\s+["\']?([^"\']+)["\']?',
+                            r'filter\s+(\w+)\s+(?:equal\s+to|equals?|=)\s+["\']?([^"\']+)["\']?'],
             'filter_contains': [r'where\s+(\w+)\s+contains\s+["\']?([^"\']+)["\']?',
-                               r'(\w+)\s+contains\s+["\']?([^"\']+)["\']?'],
+                               r'(\w+)\s+contains\s+["\']?([^"\']+)["\']?',
+                               r'filter\s+(\w+)\s+containing\s+["\']?([^"\']+)["\']?'],
             
             # Aggregation
             'average': [r'(?:calculate\s+)?average\s+(?:of\s+)?(\w+)(?:\s+by\s+(\w+))?',
-                       r'(?:find\s+)?mean\s+(?:of\s+)?(\w+)(?:\s+by\s+(\w+))?'],
+                       r'mean\s+(?:of\s+)?(\w+)(?:\s+by\s+(\w+))?',
+                       r'avg\s+(\w+)(?:\s+by\s+(\w+))?'],
             'sum': [r'(?:calculate\s+)?sum\s+(?:of\s+)?(\w+)(?:\s+by\s+(\w+))?',
-                   r'(?:find\s+)?total\s+(?:of\s+)?(\w+)(?:\s+by\s+(\w+))?'],
-            'max': [r'(?:find\s+)?max(?:imum)?\s+(?:of\s+)?(\w+)(?:\s+by\s+(\w+))?',
-                   r'(?:find\s+)?highest\s+(?:of\s+)?(\w+)(?:\s+by\s+(\w+))?'],
-            'min': [r'(?:find\s+)?min(?:imum)?\s+(?:of\s+)?(\w+)(?:\s+by\s+(\w+))?',
-                   r'(?:find\s+)?lowest\s+(?:of\s+)?(\w+)(?:\s+by\s+(\w+))?'],
+                   r'total\s+(?:of\s+)?(\w+)(?:\s+by\s+(\w+))?'],
+            'max': [r'(?:find\s+)?maximum\s+(?:of\s+)?(\w+)(?:\s+by\s+(\w+))?',
+                   r'max\s+(\w+)(?:\s+by\s+(\w+))?',
+                   r'highest\s+(\w+)(?:\s+by\s+(\w+))?'],
+            'min': [r'(?:find\s+)?minimum\s+(?:of\s+)?(\w+)(?:\s+by\s+(\w+))?',
+                   r'min\s+(\w+)(?:\s+by\s+(\w+))?',
+                   r'lowest\s+(\w+)(?:\s+by\s+(\w+))?'],
+            'count_by': [r'count\s+(?:records|rows)?\s+by\s+(\w+)',
+                        r'count\s+(\w+)\s+(?:by\s+category|by\s+group)',
+                        r'group\s+by\s+(\w+)\s+and\s+count'],
+            
+            # Sorting
+            'sort_asc': [r'sort\s+by\s+(\w+)(?:\s+(?:ascending|asc))?',
+                        r'order\s+by\s+(\w+)(?:\s+(?:ascending|asc))?'],
+            'sort_desc': [r'sort\s+by\s+(\w+)\s+(?:descending|desc)',
+                         r'order\s+by\s+(\w+)\s+(?:descending|desc)'],
             
             # Visualization
-            'bar_chart': [r'(?:create\s+)?bar\s+chart\s+(?:of\s+)?(\w+)(?:\s+by\s+(\w+))?',
-                         r'(?:show\s+)?bar\s+graph\s+(?:of\s+)?(\w+)(?:\s+by\s+(\w+))?'],
-            'line_chart': [r'(?:create\s+)?line\s+chart\s+(?:of\s+)?(\w+)(?:\s+by\s+(\w+))?',
-                          r'(?:show\s+)?line\s+graph\s+(?:of\s+)?(\w+)(?:\s+by\s+(\w+))?'],
-            'pie_chart': [r'(?:create\s+)?pie\s+chart\s+(?:of\s+)?(\w+)',
-                         r'(?:show\s+)?pie\s+graph\s+(?:of\s+)?(\w+)'],
-            'scatter_plot': [r'(?:create\s+)?scatter\s+plot\s+(?:of\s+)?(\w+)\s+(?:vs\s+|against\s+)(\w+)',
-                            r'(?:show\s+)?scatter\s+graph\s+(?:of\s+)?(\w+)\s+(?:vs\s+|against\s+)(\w+)']
-        }
-        
-        self.operation_types = {
-            'display': ['show_all', 'show_first', 'columns'],
-            'filter': ['filter_greater', 'filter_less', 'filter_equal', 'filter_contains'],
-            'aggregate': ['average', 'sum', 'max', 'min', 'count'],
-            'visualize': ['bar_chart', 'line_chart', 'pie_chart', 'scatter_plot']
+            'bar_chart': [r'(?:create\s+|show\s+|make\s+)?bar\s+chart\s+of\s+(\w+)(?:\s+by\s+(\w+))?',
+                         r'bar\s+graph\s+(?:of\s+)?(\w+)(?:\s+by\s+(\w+))?'],
+            'line_chart': [r'(?:create\s+|show\s+|make\s+)?line\s+chart\s+of\s+(\w+)(?:\s+by\s+(\w+))?',
+                          r'line\s+graph\s+(?:of\s+)?(\w+)(?:\s+by\s+(\w+))?'],
+            'pie_chart': [r'(?:create\s+|show\s+|make\s+)?pie\s+chart\s+of\s+(\w+)',
+                         r'pie\s+graph\s+(?:of\s+)?(\w+)'],
+            'scatter_plot': [r'(?:create\s+|show\s+|make\s+)?scatter\s+plot\s+of\s+(\w+)\s+(?:vs|versus|against)\s+(\w+)',
+                            r'scatter\s+chart\s+(\w+)\s+(?:vs|versus|against)\s+(\w+)']
         }
     
-    async def execute_query(self, query: str, dataset: Dict) -> Dict:
-        """Execute a Sankalp query against a dataset"""
+    async def execute_query(self, query: str, dataset: Dict) -> Dict[str, Any]:
+        """Execute a natural language query on the dataset"""
+        start_time = datetime.now()
+        
         try:
-            start_time = datetime.now()
-            
-            # Clean and normalize query
-            query = query.lower().strip()
-            
-            # Parse query to understand intent
-            parsed_query = self._parse_query(query)
-            
-            # Load dataset
+            # Load the dataset
             df = self._load_dataset(dataset)
             
-            # Execute operation
-            result = await self._execute_operation(parsed_query, df)
+            # Clean and normalize the query
+            normalized_query = query.lower().strip()
             
-            # Calculate execution time
+            # Match query pattern and execute
+            result = self._match_and_execute_query(normalized_query, df)
+            
             execution_time = (datetime.now() - start_time).total_seconds()
             
             return {
-                'success': True,
-                'query': query,
-                'operation': parsed_query,
-                'result': result,
-                'execution_time': execution_time,
-                'timestamp': datetime.now().isoformat()
+                "success": True,
+                "query": query,
+                "result": result,
+                "execution_time": execution_time,
+                "dataset_id": dataset["id"]
             }
             
         except Exception as e:
             return {
-                'success': False,
-                'query': query,
-                'error': str(e),
-                'timestamp': datetime.now().isoformat()
+                "success": False,
+                "query": query,
+                "error": str(e),
+                "execution_time": (datetime.now() - start_time).total_seconds()
             }
-    
-    def _parse_query(self, query: str) -> Dict:
-        """Parse natural language query to extract operation and parameters"""
-        
-        # Check each pattern category
-        for operation, patterns in self.query_patterns.items():
-            for pattern in patterns:
-                match = re.search(pattern, query, re.IGNORECASE)
-                if match:
-                    return {
-                        'operation': operation,
-                        'parameters': match.groups() if match.groups() else [],
-                        'original_query': query
-                    }
-        
-        # If no exact match, try fuzzy matching
-        best_match = self._fuzzy_match_query(query)
-        if best_match:
-            return best_match
-        
-        # Default fallback
-        return {
-            'operation': 'show_all',
-            'parameters': [],
-            'original_query': query,
-            'note': 'Query not fully understood, showing all data'
-        }
-    
-    def _fuzzy_match_query(self, query: str) -> Optional[Dict]:
-        """Use fuzzy matching to find closest query pattern"""
-        best_score = 0
-        best_match = None
-        
-        common_queries = [
-            "show me all data",
-            "display first 10 rows",
-            "count total records",
-            "show columns",
-            "average of sales",
-            "sum of revenue",
-            "bar chart of sales"
-        ]
-        
-        for common_query in common_queries:
-            score = fuzz.ratio(query, common_query)
-            if score > best_score and score > 60:  # Threshold for fuzzy matching
-                best_score = score
-                # Parse the common query instead
-                best_match = self._parse_query(common_query)
-        
-        return best_match
     
     def _load_dataset(self, dataset: Dict) -> pd.DataFrame:
         """Load dataset from file path"""
-        file_path = dataset['file_path']
-        file_type = dataset['file_type']
+        file_path = dataset["file_path"]
+        file_type = dataset["file_type"]
         
         if file_type == 'csv':
             return pd.read_csv(file_path)
@@ -162,277 +115,476 @@ class SankalpQueryEngine:
         else:
             raise ValueError(f"Unsupported file type: {file_type}")
     
-    async def _execute_operation(self, parsed_query: Dict, df: pd.DataFrame) -> Dict:
-        """Execute the parsed operation on the dataframe"""
-        operation = parsed_query['operation']
-        parameters = parsed_query['parameters']
+    def _match_and_execute_query(self, query: str, df: pd.DataFrame) -> Dict[str, Any]:
+        """Match query pattern and execute corresponding operation"""
         
-        if operation == 'show_all':
+        # Basic operations
+        if self._matches_pattern(query, 'show_all'):
             return self._show_all(df)
-        elif operation == 'show_first':
-            limit = int(parameters[0]) if parameters else 10
-            return self._show_first(df, limit)
-        elif operation == 'count':
+        
+        elif self._matches_pattern(query, 'show_first'):
+            match = self._extract_match(query, 'show_first')
+            n = int(match.group(1)) if match else 10
+            return self._show_first_n(df, n)
+        
+        elif self._matches_pattern(query, 'show_last'):
+            match = self._extract_match(query, 'show_last')
+            n = int(match.group(1)) if match else 10
+            return self._show_last_n(df, n)
+        
+        elif self._matches_pattern(query, 'count'):
             return self._count_records(df)
-        elif operation == 'columns':
+        
+        elif self._matches_pattern(query, 'columns'):
             return self._show_columns(df)
-        elif operation in ['filter_greater', 'filter_less', 'filter_equal', 'filter_contains']:
-            return self._filter_data(df, operation, parameters)
-        elif operation in ['average', 'sum', 'max', 'min']:
-            return self._aggregate_data(df, operation, parameters)
-        elif operation in ['bar_chart', 'line_chart', 'pie_chart', 'scatter_plot']:
-            return self._prepare_visualization(df, operation, parameters)
+        
+        elif self._matches_pattern(query, 'describe'):
+            return self._describe_data(df)
+        
+        # Filtering operations
+        elif self._matches_pattern(query, 'filter_greater'):
+            match = self._extract_match(query, 'filter_greater')
+            if match:
+                column, value = match.group(1), float(match.group(2))
+                return self._filter_greater_than(df, column, value)
+        
+        elif self._matches_pattern(query, 'filter_less'):
+            match = self._extract_match(query, 'filter_less')
+            if match:
+                column, value = match.group(1), float(match.group(2))
+                return self._filter_less_than(df, column, value)
+        
+        elif self._matches_pattern(query, 'filter_equal'):
+            match = self._extract_match(query, 'filter_equal')
+            if match:
+                column, value = match.group(1), match.group(2)
+                return self._filter_equal(df, column, value)
+        
+        elif self._matches_pattern(query, 'filter_contains'):
+            match = self._extract_match(query, 'filter_contains')
+            if match:
+                column, value = match.group(1), match.group(2)
+                return self._filter_contains(df, column, value)
+        
+        # Aggregation operations
+        elif self._matches_pattern(query, 'average'):
+            match = self._extract_match(query, 'average')
+            if match:
+                column = match.group(1)
+                group_by = match.group(2) if match.lastindex > 1 else None
+                return self._calculate_average(df, column, group_by)
+        
+        elif self._matches_pattern(query, 'sum'):
+            match = self._extract_match(query, 'sum')
+            if match:
+                column = match.group(1)
+                group_by = match.group(2) if match.lastindex > 1 else None
+                return self._calculate_sum(df, column, group_by)
+        
+        elif self._matches_pattern(query, 'max'):
+            match = self._extract_match(query, 'max')
+            if match:
+                column = match.group(1)
+                group_by = match.group(2) if match.lastindex > 1 else None
+                return self._calculate_max(df, column, group_by)
+        
+        elif self._matches_pattern(query, 'min'):
+            match = self._extract_match(query, 'min')
+            if match:
+                column = match.group(1)
+                group_by = match.group(2) if match.lastindex > 1 else None
+                return self._calculate_min(df, column, group_by)
+        
+        elif self._matches_pattern(query, 'count_by'):
+            match = self._extract_match(query, 'count_by')
+            if match:
+                column = match.group(1)
+                return self._count_by_group(df, column)
+        
+        # Visualization operations
+        elif self._matches_pattern(query, 'bar_chart'):
+            match = self._extract_match(query, 'bar_chart')
+            if match:
+                y_column = match.group(1)
+                x_column = match.group(2) if match.lastindex > 1 else None
+                return self._create_bar_chart(df, y_column, x_column)
+        
+        elif self._matches_pattern(query, 'line_chart'):
+            match = self._extract_match(query, 'line_chart')
+            if match:
+                y_column = match.group(1)
+                x_column = match.group(2) if match.lastindex > 1 else None
+                return self._create_line_chart(df, y_column, x_column)
+        
+        elif self._matches_pattern(query, 'pie_chart'):
+            match = self._extract_match(query, 'pie_chart')
+            if match:
+                column = match.group(1)
+                return self._create_pie_chart(df, column)
+        
+        elif self._matches_pattern(query, 'scatter_plot'):
+            match = self._extract_match(query, 'scatter_plot')
+            if match:
+                x_column, y_column = match.group(1), match.group(2)
+                return self._create_scatter_plot(df, x_column, y_column)
+        
         else:
-            return self._show_all(df)
-    
-    def _show_all(self, df: pd.DataFrame) -> Dict:
-        """Show all data"""
-        return {
-            'type': 'table',
-            'data': df.to_dict('records'),
-            'columns': df.columns.tolist(),
-            'total_rows': len(df),
-            'message': f"Showing all {len(df)} records"
-        }
-    
-    def _show_first(self, df: pd.DataFrame, limit: int) -> Dict:
-        """Show first N records"""
-        result_df = df.head(limit)
-        return {
-            'type': 'table',
-            'data': result_df.to_dict('records'),
-            'columns': df.columns.tolist(),
-            'total_rows': len(result_df),
-            'message': f"Showing first {limit} records"
-        }
-    
-    def _count_records(self, df: pd.DataFrame) -> Dict:
-        """Count total records"""
-        return {
-            'type': 'metric',
-            'value': len(df),
-            'message': f"Total records: {len(df)}"
-        }
-    
-    def _show_columns(self, df: pd.DataFrame) -> Dict:
-        """Show column information"""
-        columns_info = []
-        for col in df.columns:
-            columns_info.append({
-                'name': col,
-                'type': str(df[col].dtype),
-                'null_count': df[col].isnull().sum(),
-                'unique_count': df[col].nunique()
-            })
-        
-        return {
-            'type': 'columns',
-            'data': columns_info,
-            'message': f"Dataset has {len(df.columns)} columns"
-        }
-    
-    def _filter_data(self, df: pd.DataFrame, operation: str, parameters: List) -> Dict:
-        """Filter data based on conditions"""
-        if len(parameters) < 2:
-            return self._show_all(df)
-        
-        column, value = parameters[0], parameters[1]
-        
-        # Find closest matching column name
-        column = self._find_closest_column(df, column)
-        
-        if column not in df.columns:
             return {
-                'type': 'error',
-                'message': f"Column '{column}' not found in dataset"
+                "type": "error",
+                "message": f"Sorry, I don't understand the query: '{query}'. Try queries like 'show all data', 'count records', or 'average sales by region'."
             }
+    
+    def _matches_pattern(self, query: str, pattern_key: str) -> bool:
+        """Check if query matches any pattern for the given key"""
+        patterns = self.query_patterns.get(pattern_key, [])
+        return any(re.search(pattern, query) for pattern in patterns)
+    
+    def _extract_match(self, query: str, pattern_key: str):
+        """Extract match object for the first matching pattern"""
+        patterns = self.query_patterns.get(pattern_key, [])
+        for pattern in patterns:
+            match = re.search(pattern, query)
+            if match:
+                return match
+        return None
+    
+    # Data operation methods
+    def _show_all(self, df: pd.DataFrame) -> Dict[str, Any]:
+        return {
+            "type": "table",
+            "data": df.to_dict('records'),
+            "columns": df.columns.tolist(),
+            "total_rows": len(df),
+            "message": f"Showing all {len(df)} records"
+        }
+    
+    def _show_first_n(self, df: pd.DataFrame, n: int) -> Dict[str, Any]:
+        result_df = df.head(n)
+        return {
+            "type": "table",
+            "data": result_df.to_dict('records'),
+            "columns": df.columns.tolist(),
+            "total_rows": len(result_df),
+            "message": f"Showing first {len(result_df)} records"
+        }
+    
+    def _show_last_n(self, df: pd.DataFrame, n: int) -> Dict[str, Any]:
+        result_df = df.tail(n)
+        return {
+            "type": "table",
+            "data": result_df.to_dict('records'),
+            "columns": df.columns.tolist(),
+            "total_rows": len(result_df),
+            "message": f"Showing last {len(result_df)} records"
+        }
+    
+    def _count_records(self, df: pd.DataFrame) -> Dict[str, Any]:
+        return {
+            "type": "metric",
+            "value": len(df),
+            "label": "Total Records",
+            "message": f"Dataset contains {len(df)} records"
+        }
+    
+    def _show_columns(self, df: pd.DataFrame) -> Dict[str, Any]:
+        return {
+            "type": "list",
+            "data": df.columns.tolist(),
+            "message": f"Dataset has {len(df.columns)} columns"
+        }
+    
+    def _describe_data(self, df: pd.DataFrame) -> Dict[str, Any]:
+        description = df.describe(include='all').to_dict()
+        return {
+            "type": "summary",
+            "data": description,
+            "message": "Data summary statistics"
+        }
+    
+    def _filter_greater_than(self, df: pd.DataFrame, column: str, value: float) -> Dict[str, Any]:
+        if column not in df.columns:
+            return {"type": "error", "message": f"Column '{column}' not found"}
         
         try:
-            if operation == 'filter_greater':
-                filtered_df = df[df[column] > float(value)]
-            elif operation == 'filter_less':
-                filtered_df = df[df[column] < float(value)]
-            elif operation == 'filter_equal':
-                filtered_df = df[df[column] == value]
-            elif operation == 'filter_contains':
-                filtered_df = df[df[column].astype(str).str.contains(value, case=False, na=False)]
-            else:
-                filtered_df = df
-            
+            filtered_df = df[df[column] > value]
             return {
-                'type': 'table',
-                'data': filtered_df.to_dict('records'),
-                'columns': df.columns.tolist(),
-                'total_rows': len(filtered_df),
-                'message': f"Filtered data: {len(filtered_df)} records match the condition"
+                "type": "table",
+                "data": filtered_df.to_dict('records'),
+                "columns": df.columns.tolist(),
+                "total_rows": len(filtered_df),
+                "message": f"Found {len(filtered_df)} records where {column} > {value}"
             }
-            
         except Exception as e:
-            return {
-                'type': 'error',
-                'message': f"Error filtering data: {str(e)}"
-            }
+            return {"type": "error", "message": f"Error filtering data: {str(e)}"}
     
-    def _aggregate_data(self, df: pd.DataFrame, operation: str, parameters: List) -> Dict:
-        """Perform aggregation operations"""
-        if not parameters:
-            return {'type': 'error', 'message': 'No column specified for aggregation'}
-        
-        column = parameters[0]
-        group_by = parameters[1] if len(parameters) > 1 else None
-        
-        # Find closest matching column name
-        column = self._find_closest_column(df, column)
-        
+    def _filter_less_than(self, df: pd.DataFrame, column: str, value: float) -> Dict[str, Any]:
         if column not in df.columns:
+            return {"type": "error", "message": f"Column '{column}' not found"}
+        
+        try:
+            filtered_df = df[df[column] < value]
             return {
-                'type': 'error',
-                'message': f"Column '{column}' not found in dataset"
+                "type": "table",
+                "data": filtered_df.to_dict('records'),
+                "columns": df.columns.tolist(),
+                "total_rows": len(filtered_df),
+                "message": f"Found {len(filtered_df)} records where {column} < {value}"
             }
+        except Exception as e:
+            return {"type": "error", "message": f"Error filtering data: {str(e)}"}
+    
+    def _filter_equal(self, df: pd.DataFrame, column: str, value: str) -> Dict[str, Any]:
+        if column not in df.columns:
+            return {"type": "error", "message": f"Column '{column}' not found"}
+        
+        try:
+            filtered_df = df[df[column].astype(str).str.lower() == value.lower()]
+            return {
+                "type": "table",
+                "data": filtered_df.to_dict('records'),
+                "columns": df.columns.tolist(),
+                "total_rows": len(filtered_df),
+                "message": f"Found {len(filtered_df)} records where {column} = {value}"
+            }
+        except Exception as e:
+            return {"type": "error", "message": f"Error filtering data: {str(e)}"}
+    
+    def _filter_contains(self, df: pd.DataFrame, column: str, value: str) -> Dict[str, Any]:
+        if column not in df.columns:
+            return {"type": "error", "message": f"Column '{column}' not found"}
+        
+        try:
+            filtered_df = df[df[column].astype(str).str.contains(value, case=False, na=False)]
+            return {
+                "type": "table",
+                "data": filtered_df.to_dict('records'),
+                "columns": df.columns.tolist(),
+                "total_rows": len(filtered_df),
+                "message": f"Found {len(filtered_df)} records where {column} contains '{value}'"
+            }
+        except Exception as e:
+            return {"type": "error", "message": f"Error filtering data: {str(e)}"}
+    
+    def _calculate_average(self, df: pd.DataFrame, column: str, group_by: str = None) -> Dict[str, Any]:
+        if column not in df.columns:
+            return {"type": "error", "message": f"Column '{column}' not found"}
         
         try:
             if group_by:
-                group_by = self._find_closest_column(df, group_by)
                 if group_by not in df.columns:
-                    return {
-                        'type': 'error',
-                        'message': f"Group by column '{group_by}' not found in dataset"
-                    }
+                    return {"type": "error", "message": f"Group by column '{group_by}' not found"}
                 
-                if operation == 'average':
-                    result = df.groupby(group_by)[column].mean()
-                elif operation == 'sum':
-                    result = df.groupby(group_by)[column].sum()
-                elif operation == 'max':
-                    result = df.groupby(group_by)[column].max()
-                elif operation == 'min':
-                    result = df.groupby(group_by)[column].min()
-                
+                result = df.groupby(group_by)[column].mean().to_dict()
                 return {
-                    'type': 'aggregated_table',
-                    'data': result.reset_index().to_dict('records'),
-                    'columns': [group_by, f"{operation}_{column}"],
-                    'message': f"{operation.capitalize()} of {column} by {group_by}"
+                    "type": "grouped_metric",
+                    "data": result,
+                    "operation": "average",
+                    "column": column,
+                    "group_by": group_by,
+                    "message": f"Average {column} by {group_by}"
                 }
             else:
-                if operation == 'average':
-                    result = df[column].mean()
-                elif operation == 'sum':
-                    result = df[column].sum()
-                elif operation == 'max':
-                    result = df[column].max()
-                elif operation == 'min':
-                    result = df[column].min()
-                
+                avg_value = df[column].mean()
                 return {
-                    'type': 'metric',
-                    'value': result,
-                    'message': f"{operation.capitalize()} of {column}: {result}"
+                    "type": "metric",
+                    "value": avg_value,
+                    "label": f"Average {column}",
+                    "message": f"Average {column}: {avg_value:.2f}"
                 }
-                
         except Exception as e:
-            return {
-                'type': 'error',
-                'message': f"Error in aggregation: {str(e)}"
-            }
+            return {"type": "error", "message": f"Error calculating average: {str(e)}"}
     
-    def _prepare_visualization(self, df: pd.DataFrame, operation: str, parameters: List) -> Dict:
-        """Prepare data for visualization"""
-        if not parameters:
-            return {'type': 'error', 'message': 'No column specified for visualization'}
-        
-        column = parameters[0]
-        group_by = parameters[1] if len(parameters) > 1 else None
-        
-        # Find closest matching column names
-        column = self._find_closest_column(df, column)
-        
+    def _calculate_sum(self, df: pd.DataFrame, column: str, group_by: str = None) -> Dict[str, Any]:
         if column not in df.columns:
-            return {
-                'type': 'error',
-                'message': f"Column '{column}' not found in dataset"
-            }
+            return {"type": "error", "message": f"Column '{column}' not found"}
         
         try:
-            if operation == 'bar_chart':
-                if group_by:
-                    group_by = self._find_closest_column(df, group_by)
-                    data = df.groupby(group_by)[column].sum().reset_index()
-                else:
-                    data = df[column].value_counts().reset_index()
-                    data.columns = [column, 'count']
+            if group_by:
+                if group_by not in df.columns:
+                    return {"type": "error", "message": f"Group by column '{group_by}' not found"}
                 
+                result = df.groupby(group_by)[column].sum().to_dict()
                 return {
-                    'type': 'visualization',
-                    'chart_type': 'bar',
-                    'data': data.to_dict('records'),
-                    'x_column': group_by or column,
-                    'y_column': column if group_by else 'count',
-                    'title': f"Bar Chart: {column}" + (f" by {group_by}" if group_by else "")
+                    "type": "grouped_metric",
+                    "data": result,
+                    "operation": "sum",
+                    "column": column,
+                    "group_by": group_by,
+                    "message": f"Sum {column} by {group_by}"
                 }
-            
-            elif operation == 'line_chart':
-                if group_by:
-                    group_by = self._find_closest_column(df, group_by)
-                    data = df.groupby(group_by)[column].mean().reset_index()
-                else:
-                    data = df[[column]].reset_index()
-                
+            else:
+                sum_value = df[column].sum()
                 return {
-                    'type': 'visualization',
-                    'chart_type': 'line',
-                    'data': data.to_dict('records'),
-                    'x_column': group_by or 'index',
-                    'y_column': column,
-                    'title': f"Line Chart: {column}" + (f" by {group_by}" if group_by else "")
+                    "type": "metric",
+                    "value": sum_value,
+                    "label": f"Total {column}",
+                    "message": f"Total {column}: {sum_value}"
                 }
-            
-            elif operation == 'pie_chart':
-                data = df[column].value_counts().reset_index()
-                data.columns = [column, 'count']
-                
-                return {
-                    'type': 'visualization',
-                    'chart_type': 'pie',
-                    'data': data.to_dict('records'),
-                    'label_column': column,
-                    'value_column': 'count',
-                    'title': f"Pie Chart: {column} Distribution"
-                }
-            
-            elif operation == 'scatter_plot':
-                if len(parameters) < 2:
-                    return {'type': 'error', 'message': 'Scatter plot requires two columns'}
-                
-                y_column = self._find_closest_column(df, parameters[1])
-                
-                return {
-                    'type': 'visualization',
-                    'chart_type': 'scatter',
-                    'data': df[[column, y_column]].to_dict('records'),
-                    'x_column': column,
-                    'y_column': y_column,
-                    'title': f"Scatter Plot: {column} vs {y_column}"
-                }
-            
         except Exception as e:
-            return {
-                'type': 'error',
-                'message': f"Error preparing visualization: {str(e)}"
-            }
+            return {"type": "error", "message": f"Error calculating sum: {str(e)}"}
     
-    def _find_closest_column(self, df: pd.DataFrame, column_name: str) -> str:
-        """Find the closest matching column name using fuzzy matching"""
-        if column_name in df.columns:
-            return column_name
+    def _calculate_max(self, df: pd.DataFrame, column: str, group_by: str = None) -> Dict[str, Any]:
+        if column not in df.columns:
+            return {"type": "error", "message": f"Column '{column}' not found"}
         
-        best_match = None
-        best_score = 0
+        try:
+            if group_by:
+                if group_by not in df.columns:
+                    return {"type": "error", "message": f"Group by column '{group_by}' not found"}
+                
+                result = df.groupby(group_by)[column].max().to_dict()
+                return {
+                    "type": "grouped_metric",
+                    "data": result,
+                    "operation": "maximum",
+                    "column": column,
+                    "group_by": group_by,
+                    "message": f"Maximum {column} by {group_by}"
+                }
+            else:
+                max_value = df[column].max()
+                return {
+                    "type": "metric",
+                    "value": max_value,
+                    "label": f"Maximum {column}",
+                    "message": f"Maximum {column}: {max_value}"
+                }
+        except Exception as e:
+            return {"type": "error", "message": f"Error finding maximum: {str(e)}"}
+    
+    def _calculate_min(self, df: pd.DataFrame, column: str, group_by: str = None) -> Dict[str, Any]:
+        if column not in df.columns:
+            return {"type": "error", "message": f"Column '{column}' not found"}
         
-        for col in df.columns:
-            score = fuzz.ratio(column_name.lower(), col.lower())
-            if score > best_score:
-                best_score = score
-                best_match = col
+        try:
+            if group_by:
+                if group_by not in df.columns:
+                    return {"type": "error", "message": f"Group by column '{group_by}' not found"}
+                
+                result = df.groupby(group_by)[column].min().to_dict()
+                return {
+                    "type": "grouped_metric",
+                    "data": result,
+                    "operation": "minimum",
+                    "column": column,
+                    "group_by": group_by,
+                    "message": f"Minimum {column} by {group_by}"
+                }
+            else:
+                min_value = df[column].min()
+                return {
+                    "type": "metric",
+                    "value": min_value,
+                    "label": f"Minimum {column}",
+                    "message": f"Minimum {column}: {min_value}"
+                }
+        except Exception as e:
+            return {"type": "error", "message": f"Error finding minimum: {str(e)}"}
+    
+    def _count_by_group(self, df: pd.DataFrame, column: str) -> Dict[str, Any]:
+        if column not in df.columns:
+            return {"type": "error", "message": f"Column '{column}' not found"}
         
-        return best_match if best_score > 60 else column_name
+        try:
+            result = df[column].value_counts().to_dict()
+            return {
+                "type": "grouped_metric",
+                "data": result,
+                "operation": "count",
+                "column": column,
+                "message": f"Count by {column}"
+            }
+        except Exception as e:
+            return {"type": "error", "message": f"Error counting by group: {str(e)}"}
+    
+    def _create_bar_chart(self, df: pd.DataFrame, y_column: str, x_column: str = None) -> Dict[str, Any]:
+        return {
+            "type": "visualization",
+            "chart_type": "bar",
+            "config": {
+                "x_column": x_column,
+                "y_column": y_column,
+                "title": f"Bar Chart: {y_column}" + (f" by {x_column}" if x_column else "")
+            },
+            "message": f"Created bar chart visualization"
+        }
+    
+    def _create_line_chart(self, df: pd.DataFrame, y_column: str, x_column: str = None) -> Dict[str, Any]:
+        return {
+            "type": "visualization",
+            "chart_type": "line",
+            "config": {
+                "x_column": x_column,
+                "y_column": y_column,
+                "title": f"Line Chart: {y_column}" + (f" by {x_column}" if x_column else "")
+            },
+            "message": f"Created line chart visualization"
+        }
+    
+    def _create_pie_chart(self, df: pd.DataFrame, column: str) -> Dict[str, Any]:
+        return {
+            "type": "visualization",
+            "chart_type": "pie",
+            "config": {
+                "column": column,
+                "title": f"Pie Chart: {column} Distribution"
+            },
+            "message": f"Created pie chart visualization"
+        }
+    
+    def _create_scatter_plot(self, df: pd.DataFrame, x_column: str, y_column: str) -> Dict[str, Any]:
+        return {
+            "type": "visualization",
+            "chart_type": "scatter",
+            "config": {
+                "x_column": x_column,
+                "y_column": y_column,
+                "title": f"Scatter Plot: {x_column} vs {y_column}"
+            },
+            "message": f"Created scatter plot visualization"
+        }
+
+    def get_all_query_examples(self) -> List[Dict[str, Any]]:
+        """Get all supported query examples with descriptions"""
+        return [
+            {
+                "category": "Basic Data Operations",
+                "queries": [
+                    {"query": "show all data", "description": "Display all records in the dataset"},
+                    {"query": "show first 10", "description": "Display first 10 records"},
+                    {"query": "show last 5", "description": "Display last 5 records"},
+                    {"query": "count total records", "description": "Count total number of records"},
+                    {"query": "show columns", "description": "List all column names"},
+                    {"query": "describe data", "description": "Show summary statistics of the dataset"}
+                ]
+            },
+            {
+                "category": "Data Filtering",
+                "queries": [
+                    {"query": "where age greater than 25", "description": "Filter records where age > 25"},
+                    {"query": "where price less than 100", "description": "Filter records where price < 100"},
+                    {"query": "where city equals New York", "description": "Filter records where city = 'New York'"},
+                    {"query": "where name contains john", "description": "Filter records where name contains 'john'"},
+                    {"query": "filter status equal to active", "description": "Filter records where status = 'active'"}
+                ]
+            },
+            {
+                "category": "Data Aggregation",
+                "queries": [
+                    {"query": "average sales", "description": "Calculate average of sales column"},
+                    {"query": "sum revenue by region", "description": "Calculate total revenue grouped by region"},
+                    {"query": "maximum price by category", "description": "Find maximum price in each category"},
+                    {"query": "minimum age", "description": "Find minimum age value"},
+                    {"query": "count records by department", "description": "Count records grouped by department"}
+                ]
+            },
+            {
+                "category": "Data Visualization",
+                "queries": [
+                    {"query": "bar chart of sales by region", "description": "Create bar chart showing sales by region"},
+                    {"query": "line chart of revenue by month", "description": "Create line chart showing revenue trends by month"},
+                    {"query": "pie chart of category", "description": "Create pie chart showing category distribution"},
+                    {"query": "scatter plot of price vs quantity", "description": "Create scatter plot comparing price and quantity"}
+                ]
+            }
+        ]
