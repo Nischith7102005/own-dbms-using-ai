@@ -4,35 +4,83 @@ import {
   Upload, 
   File, 
   FileText, 
-  FileSpreadsheet, 
+  Database, 
   CheckCircle, 
-  AlertCircle, 
+  AlertCircle,
   X,
   Eye,
-  Download,
-  BarChart3,
-  Database,
-  Loader2
+  BarChart3
 } from 'lucide-react';
 import { apiService } from '../services/api';
 import toast from 'react-hot-toast';
 
-const FileUpload = ({ onUpload, datasets, selectedDataset, onDatasetSelect }) => {
+const FileUpload = ({ onUpload, config }) => {
+  const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [isUploading, setIsUploading] = useState(false);
   const [uploadedFile, setUploadedFile] = useState(null);
   const [previewData, setPreviewData] = useState(null);
   const [showPreview, setShowPreview] = useState(false);
 
+  const allowedTypes = config?.allowed_file_types || ['csv', 'json', 'xlsx', 'xls'];
+
+  const onDrop = useCallback(async (acceptedFiles) => {
+    const file = acceptedFiles[0];
+    if (!file) return;
+
+    // Check file type
+    const fileExt = file.name.split('.').pop().toLowerCase();
+    if (!allowedTypes.includes(fileExt)) {
+      toast.error(`File type .${fileExt} not supported. Allowed types: ${allowedTypes.join(', ')}`);
+      return;
+    }
+
+    setUploading(true);
+    setUploadProgress(0);
+    setUploadedFile(null);
+
+    try {
+      const result = await apiService.uploadFile(file, (progress) => {
+        setUploadProgress(progress);
+      });
+
+      setUploadedFile(result);
+      setPreviewData(result.metadata);
+      setShowPreview(true);
+      
+      toast.success('File uploaded successfully!');
+      
+      if (onUpload) {
+        onUpload(result);
+      }
+    } catch (error) {
+      toast.error(error.message || 'Upload failed');
+    } finally {
+      setUploading(false);
+      setUploadProgress(0);
+    }
+  }, [allowedTypes, onUpload]);
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    accept: {
+      'text/csv': ['.csv'],
+      'application/json': ['.json'],
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+      'application/vnd.ms-excel': ['.xls']
+    },
+    maxFiles: 1,
+    disabled: uploading
+  });
+
   const getFileIcon = (fileType) => {
     switch (fileType) {
       case 'csv':
-        return <FileSpreadsheet className="h-8 w-8 text-green-600" />;
+        return <FileText className="h-8 w-8 text-green-600" />;
       case 'json':
-        return <FileText className="h-8 w-8 text-blue-600" />;
+        return <File className="h-8 w-8 text-blue-600" />;
       case 'xlsx':
       case 'xls':
-        return <FileSpreadsheet className="h-8 w-8 text-green-600" />;
+        return <BarChart3 className="h-8 w-8 text-orange-600" />;
       default:
         return <File className="h-8 w-8 text-gray-600" />;
     }
@@ -46,320 +94,205 @@ const FileUpload = ({ onUpload, datasets, selectedDataset, onDatasetSelect }) =>
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  const onDrop = useCallback(async (acceptedFiles) => {
-    const file = acceptedFiles[0];
-    if (!file) return;
-
-    // Validate file type
-    const fileExtension = file.name.split('.').pop().toLowerCase();
-    const supportedTypes = ['csv', 'json', 'xlsx', 'xls'];
-    
-    if (!supportedTypes.includes(fileExtension)) {
-      toast.error('Unsupported file type. Please upload CSV, JSON, or Excel files.');
-      return;
-    }
-
-    // No file size limits - accept any size file
-
-    setIsUploading(true);
-    setUploadProgress(0);
-
-    try {
-      const result = await apiService.uploadFile(file, (progress) => {
-        setUploadProgress(progress);
-      });
-
-      setUploadedFile(result);
-      setPreviewData(result.metadata?.sample_data || []);
-      onUpload(result);
-      
-      toast.success('File uploaded successfully!');
-      setShowPreview(true);
-    } catch (error) {
-      console.error('Upload error:', error);
-      toast.error('Failed to upload file. Please try again.');
-    } finally {
-      setIsUploading(false);
-      setUploadProgress(0);
-    }
-  }, [onUpload]);
-
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop,
-    accept: {
-      'text/csv': ['.csv'],
-      'application/json': ['.json'],
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
-      'application/vnd.ms-excel': ['.xls']
-    },
-    multiple: false
-  });
-
-  const DataPreview = ({ data, metadata }) => {
-    if (!data || data.length === 0) return null;
-
-    return (
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-medium text-gray-900">Data Preview</h3>
-          <button
-            onClick={() => setShowPreview(false)}
-            className="text-gray-400 hover:text-gray-600"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div className="bg-blue-50 rounded-lg p-4">
-            <div className="flex items-center space-x-2">
-              <Database className="h-5 w-5 text-blue-600" />
-              <span className="text-sm font-medium text-blue-900">Total Rows</span>
-            </div>
-            <p className="text-2xl font-bold text-blue-600 mt-2">{metadata?.rows || 0}</p>
-          </div>
-          
-          <div className="bg-green-50 rounded-lg p-4">
-            <div className="flex items-center space-x-2">
-              <BarChart3 className="h-5 w-5 text-green-600" />
-              <span className="text-sm font-medium text-green-900">Columns</span>
-            </div>
-            <p className="text-2xl font-bold text-green-600 mt-2">{metadata?.columns || 0}</p>
-          </div>
-          
-          <div className="bg-purple-50 rounded-lg p-4">
-            <div className="flex items-center space-x-2">
-              <FileText className="h-5 w-5 text-purple-600" />
-              <span className="text-sm font-medium text-purple-900">File Size</span>
-            </div>
-            <p className="text-2xl font-bold text-purple-600 mt-2">
-              {formatFileSize(metadata?.file_size || 0)}
-            </p>
-          </div>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                {metadata?.column_names?.map((column, index) => (
-                  <th
-                    key={index}
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                  >
-                    {column}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {data.slice(0, 5).map((row, index) => (
-                <tr key={index} className="hover:bg-gray-50">
-                  {metadata?.column_names?.map((column, colIndex) => (
-                    <td
-                      key={colIndex}
-                      className="px-6 py-4 whitespace-nowrap text-sm text-gray-900"
-                    >
-                      {row[column]?.toString() || ''}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        
-        <div className="mt-4 text-sm text-gray-500 text-center">
-          Showing first 5 rows of {metadata?.rows || 0} total rows
-        </div>
-      </div>
-    );
-  };
-
-  const DatasetsList = () => (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-      <div className="px-6 py-4 border-b border-gray-200">
-        <h3 className="text-lg font-medium text-gray-900">Your Datasets</h3>
-        <p className="text-sm text-gray-600 mt-1">Select a dataset to work with</p>
-      </div>
-      
-      <div className="divide-y divide-gray-200">
-        {datasets.length > 0 ? (
-          datasets.map((dataset) => (
-            <div
-              key={dataset.id}
-              className={`px-6 py-4 hover:bg-gray-50 cursor-pointer ${
-                selectedDataset?.id === dataset.id ? 'bg-blue-50 border-l-4 border-blue-500' : ''
-              }`}
-              onClick={() => onDatasetSelect(dataset)}
-            >
-              <div className="flex items-center space-x-3">
-                <div className="flex-shrink-0">
-                  {getFileIcon(dataset.file_type)}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">
-                    {dataset.original_name}
-                  </p>
-                  <p className="text-sm text-gray-500">
-                    {dataset.metadata?.rows} rows • {dataset.metadata?.columns} columns • {formatFileSize(dataset.metadata?.file_size || 0)}
-                  </p>
-                  <p className="text-xs text-gray-400 mt-1">
-                    Uploaded {new Date(dataset.upload_time).toLocaleDateString()}
-                  </p>
-                </div>
-                <div className="flex-shrink-0">
-                  {selectedDataset?.id === dataset.id && (
-                    <CheckCircle className="h-5 w-5 text-blue-600" />
-                  )}
-                </div>
-              </div>
-            </div>
-          ))
-        ) : (
-          <div className="px-6 py-8 text-center">
-            <Database className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-            <p className="text-gray-500">No datasets uploaded yet</p>
-            <p className="text-sm text-gray-400">Upload your first dataset to get started</p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-
   return (
     <div className="space-y-6">
-      {/* Page Header */}
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Upload Data</h1>
-        <p className="text-gray-600">Upload CSV, JSON, or Excel files to start querying your data</p>
+        <h1 className="text-2xl font-bold text-gray-900">Upload Dataset</h1>
+        <p className="text-gray-600">Upload your data files to start analyzing with Sankalp</p>
       </div>
 
       {/* Upload Area */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="space-y-6">
-          {/* Dropzone */}
-          <div
-            {...getRootProps()}
-            className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
-              isDragActive
-                ? 'border-blue-500 bg-blue-50'
-                : 'border-gray-300 hover:border-gray-400'
-            }`}
-          >
-            <input {...getInputProps()} />
-            
-            <div className="space-y-4">
-              <div className="mx-auto w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center">
-                <Upload className="h-8 w-8 text-gray-400" />
-              </div>
-              
-              <div>
-                <h3 className="text-lg font-medium text-gray-900">
-                  {isDragActive ? 'Drop your file here' : 'Upload your data file'}
-                </h3>
-                <p className="text-gray-600 mt-2">
-                  Drag and drop or click to select a file
-                </p>
-              </div>
-              
-              <div className="flex items-center justify-center space-x-4 text-sm text-gray-500">
-                <span>CSV</span>
-                <span>•</span>
-                <span>JSON</span>
-                <span>•</span>
-                <span>Excel</span>
-                <span>•</span>
-                <span>No Size Limit</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Upload Progress */}
-          {isUploading && (
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <div className="flex items-center space-x-3 mb-4">
-                <Loader2 className="h-5 w-5 text-blue-600 animate-spin" />
-                <span className="text-sm font-medium text-gray-900">Uploading and processing...</span>
-              </div>
-              <div className="w-full bg-gray-200 rounded-full h-2">
-                <div
+      <div
+        {...getRootProps()}
+        className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
+          isDragActive
+            ? 'border-blue-500 bg-blue-50'
+            : uploading
+            ? 'border-gray-300 bg-gray-50 cursor-not-allowed'
+            : 'border-gray-300 hover:border-blue-400 hover:bg-gray-50'
+        }`}
+      >
+        <input {...getInputProps()} />
+        
+        {uploading ? (
+          <div className="space-y-4">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+            <div>
+              <p className="text-lg font-medium text-gray-900">Uploading...</p>
+              <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
+                <div 
                   className="bg-blue-600 h-2 rounded-full transition-all duration-300"
                   style={{ width: `${uploadProgress}%` }}
-                />
+                ></div>
               </div>
-              <p className="text-sm text-gray-600 mt-2">{uploadProgress}% complete</p>
+              <p className="text-sm text-gray-600 mt-1">{uploadProgress}% complete</p>
             </div>
-          )}
-
-          {/* Upload Success */}
-          {uploadedFile && !isUploading && (
-            <div className="bg-green-50 rounded-lg p-6 border border-green-200">
-              <div className="flex items-center space-x-3">
-                <CheckCircle className="h-8 w-8 text-green-600" />
-                <div>
-                  <h3 className="text-lg font-medium text-green-900">Upload Successful!</h3>
-                  <p className="text-green-700 mt-1">
-                    {uploadedFile.filename} has been processed and is ready to use.
-                  </p>
-                </div>
-              </div>
-              
-              <div className="mt-4 flex space-x-3">
-                <button
-                  onClick={() => setShowPreview(true)}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center space-x-2"
-                >
-                  <Eye className="h-4 w-4" />
-                  <span>Preview Data</span>
-                </button>
-                <button
-                  onClick={() => onDatasetSelect(uploadedFile)}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                >
-                  Start Querying
-                </button>
-              </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="flex justify-center">
+              <Upload className="h-12 w-12 text-gray-400" />
             </div>
-          )}
+            <div>
+              <p className="text-lg font-medium text-gray-900">
+                {isDragActive ? 'Drop your file here' : 'Drag & drop your file here'}
+              </p>
+              <p className="text-gray-600">or click to browse</p>
+            </div>
+            <div className="text-sm text-gray-500">
+              <p>Supported formats: {allowedTypes.join(', ').toUpperCase()}</p>
+              <p>Maximum file size: {config?.max_file_size || 100}MB</p>
+            </div>
+          </div>
+        )}
+      </div>
 
-          {/* File Format Guide */}
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-            <h3 className="text-lg font-medium text-gray-900 mb-4">Supported File Formats</h3>
-            <div className="space-y-3">
-              <div className="flex items-center space-x-3">
-                <FileSpreadsheet className="h-5 w-5 text-green-600" />
-                <div>
-                  <p className="text-sm font-medium text-gray-900">CSV Files</p>
-                  <p className="text-xs text-gray-600">Comma-separated values with headers</p>
-                </div>
-              </div>
-              <div className="flex items-center space-x-3">
-                <FileText className="h-5 w-5 text-blue-600" />
-                <div>
-                  <p className="text-sm font-medium text-gray-900">JSON Files</p>
-                  <p className="text-xs text-gray-600">Structured data in JSON format</p>
-                </div>
-              </div>
-              <div className="flex items-center space-x-3">
-                <FileSpreadsheet className="h-5 w-5 text-green-600" />
-                <div>
-                  <p className="text-sm font-medium text-gray-900">Excel Files</p>
-                  <p className="text-xs text-gray-600">Microsoft Excel (.xlsx, .xls)</p>
-                </div>
+      {/* Upload Success */}
+      {uploadedFile && (
+        <div className="bg-green-50 border border-green-200 rounded-lg p-6">
+          <div className="flex items-start space-x-4">
+            <CheckCircle className="h-6 w-6 text-green-600 mt-1" />
+            <div className="flex-1">
+              <h3 className="text-lg font-semibold text-green-900">File Uploaded Successfully!</h3>
+              <div className="mt-2 text-sm text-green-800">
+                <p><strong>File:</strong> {uploadedFile.original_name}</p>
+                <p><strong>Size:</strong> {formatFileSize(uploadedFile.metadata?.file_size || 0)}</p>
+                <p><strong>Records:</strong> {uploadedFile.metadata?.rows || 0}</p>
+                <p><strong>Columns:</strong> {uploadedFile.metadata?.columns || 0}</p>
               </div>
             </div>
           </div>
         </div>
-
-        {/* Datasets List */}
-        <DatasetsList />
-      </div>
-
-      {/* Data Preview Modal */}
-      {showPreview && previewData && (
-        <DataPreview data={previewData} metadata={uploadedFile?.metadata} />
       )}
+
+      {/* Preview */}
+      {showPreview && previewData && (
+        <div className="bg-white border border-gray-200 rounded-lg p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">Data Preview</h3>
+            <button
+              onClick={() => setShowPreview(false)}
+              className="text-gray-500 hover:text-gray-700"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+
+          <div className="space-y-4">
+            {/* File Info */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <div className="flex items-center space-x-2">
+                  {getFileIcon(uploadedFile?.file_type)}
+                  <div>
+                    <p className="font-medium text-gray-900">File Type</p>
+                    <p className="text-sm text-gray-600">{uploadedFile?.file_type?.toUpperCase()}</p>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <div className="flex items-center space-x-2">
+                  <Database className="h-8 w-8 text-blue-600" />
+                  <div>
+                    <p className="font-medium text-gray-900">Records</p>
+                    <p className="text-sm text-gray-600">{previewData.rows?.toLocaleString()}</p>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <div className="flex items-center space-x-2">
+                  <BarChart3 className="h-8 w-8 text-green-600" />
+                  <div>
+                    <p className="font-medium text-gray-900">Columns</p>
+                    <p className="text-sm text-gray-600">{previewData.columns}</p>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <div className="flex items-center space-x-2">
+                  <Eye className="h-8 w-8 text-purple-600" />
+                  <div>
+                    <p className="font-medium text-gray-900">Size</p>
+                    <p className="text-sm text-gray-600">{formatFileSize(previewData.file_size || 0)}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Column Information */}
+            <div>
+              <h4 className="font-medium text-gray-900 mb-2">Column Information</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                {previewData.column_names?.map((column) => (
+                  <div key={column} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                    <span className="font-medium text-gray-900 text-sm">{column}</span>
+                    <span className="text-xs text-gray-600 bg-gray-200 px-2 py-1 rounded">
+                      {previewData.column_types?.[column] || 'unknown'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Sample Data */}
+            {previewData.sample_data && previewData.sample_data.length > 0 && (
+              <div>
+                <h4 className="font-medium text-gray-900 mb-2">Sample Data</h4>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full border border-gray-200 rounded-lg">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        {previewData.column_names?.map((column) => (
+                          <th key={column} className="px-4 py-2 text-left text-sm font-medium text-gray-900 border-b">
+                            {column}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {previewData.sample_data.map((row, index) => (
+                        <tr key={index} className="hover:bg-gray-50">
+                          {previewData.column_names?.map((column) => (
+                            <td key={column} className="px-4 py-2 text-sm text-gray-900 border-b">
+                              {row[column] || ''}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Tips */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
+        <h3 className="text-lg font-semibold text-blue-900 mb-3">Tips for Better Results</h3>
+        <div className="space-y-2 text-sm text-blue-800">
+          <div className="flex items-start space-x-2">
+            <div className="w-2 h-2 bg-blue-600 rounded-full mt-2"></div>
+            <span>Use descriptive column names for better query understanding</span>
+          </div>
+          <div className="flex items-start space-x-2">
+            <div className="w-2 h-2 bg-blue-600 rounded-full mt-2"></div>
+            <span>Ensure your data is clean and formatted consistently</span>
+          </div>
+          <div className="flex items-start space-x-2">
+            <div className="w-2 h-2 bg-blue-600 rounded-full mt-2"></div>
+            <span>CSV files should have headers in the first row</span>
+          </div>
+          <div className="flex items-start space-x-2">
+            <div className="w-2 h-2 bg-blue-600 rounded-full mt-2"></div>
+            <span>Large files may take longer to process</span>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
