@@ -8,8 +8,6 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
-import pymongo
-from pymongo import MongoClient
 import uuid
 from dotenv import load_dotenv
 import aiofiles
@@ -26,34 +24,22 @@ app = FastAPI(title="Sankalp DBMS", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=False,
+    allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
-# MongoDB connection
-MONGO_URL = os.getenv("MONGO_URL", "mongodb://localhost:27017/sankalp_db")
-try:
-    client = MongoClient(MONGO_URL)
-    db = client.sankalp_db
-    # Test connection
-    client.admin.command('ping')
-    print("Connected to MongoDB successfully")
-except Exception as e:
-    print(f"MongoDB connection failed: {e}")
-    # Use in-memory storage as fallback
-    db = None
-
-# Collections
-if db:
-    users_collection = db.users
-    datasets_collection = db.datasets
-    queries_collection = db.queries
-    tutorials_collection = db.tutorials
-else:
-    # In-memory storage fallback
-    datasets_storage = []
-    queries_storage = []
+# In-memory storage (replace with database later)
+datasets_storage = {}
+queries_storage = []
+config_storage = {
+    "max_file_size": 100,
+    "allowed_file_types": ["csv", "json", "xlsx"],
+    "auto_backup": True,
+    "encrypt_data": False,
+    "audit_logging": True
+}
+print("Using in-memory storage")
 
 # Upload directory
 UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "./uploads"))
@@ -80,23 +66,23 @@ async def health_check():
     return {
         "status": "healthy", 
         "timestamp": datetime.now().isoformat(),
-        "database": "connected" if db else "fallback"
+        "database": "fallback"
     }
 
 @app.get("/api/config")
 async def get_config():
-    return {
-        "multi_user_mode": MULTI_USER_MODE,
-        "max_file_size": os.getenv("MAX_FILE_SIZE", "100MB"),
-        "supported_formats": ["csv", "json", "xlsx", "xls"],
-        "version": "1.0.0"
-    }
+    return config_storage
+
+@app.post("/api/config")
+async def update_config(config: Dict[str, Any]):
+    config_storage.update(config)
+    return {"success": True}
 
 @app.post("/api/upload")
 async def upload_file(file: UploadFile = File(...)):
     try:
         print(f"Received file upload request: {file.filename}")
-        
+
         # Validate file
         if not file.filename:
             print("No filename provided")
@@ -157,14 +143,8 @@ async def upload_file(file: UploadFile = File(...)):
             "status": "processed"
         }
 
-        try:
-            if db:
-                datasets_collection.insert_one(dataset_doc)
-            else:
-                datasets_storage.append(dataset_doc)
-            print("Dataset saved to storage")
-        except Exception as storage_error:
-            print(f"Error saving to storage: {storage_error}")
+        datasets_storage[file_id] = dataset_doc
+        print("Dataset saved to storage")
 
         return JSONResponse(
             status_code=200,
@@ -193,7 +173,7 @@ async def process_uploaded_file(file_path: Path, original_name: str, file_type: 
     """Process uploaded file and extract metadata"""
     try:
         print(f"Processing file: {file_path}, type: {file_type}")
-        
+
         # Read the file based on type
         if file_type == 'csv':
             df = pd.read_csv(file_path, encoding='utf-8')
@@ -271,24 +251,13 @@ async def process_uploaded_file(file_path: Path, original_name: str, file_type: 
 
 @app.get("/api/datasets")
 async def get_datasets():
-    """Get all uploaded datasets"""
-    try:
-        if db:
-            datasets = list(datasets_collection.find({}, {"_id": 0}))
-        else:
-            datasets = datasets_storage
-        return {"datasets": datasets}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return list(datasets_storage.values())
 
 @app.get("/api/datasets/{dataset_id}")
 async def get_dataset(dataset_id: str):
     """Get specific dataset by ID"""
     try:
-        if db:
-            dataset = datasets_collection.find_one({"id": dataset_id}, {"_id": 0})
-        else:
-            dataset = next((d for d in datasets_storage if d["id"] == dataset_id), None)
+        dataset = datasets_storage.get(dataset_id)
 
         if not dataset:
             raise HTTPException(status_code=404, detail="Dataset not found")
@@ -300,30 +269,17 @@ async def get_dataset(dataset_id: str):
 async def delete_dataset(dataset_id: str):
     """Delete a dataset"""
     try:
-        if db:
-            dataset = datasets_collection.find_one({"id": dataset_id})
-            if not dataset:
-                raise HTTPException(status_code=404, detail="Dataset not found")
+        dataset = datasets_storage.get(dataset_id)
+        if not dataset:
+            raise HTTPException(status_code=404, detail="Dataset not found")
 
-            # Delete file
-            file_path = Path(dataset["file_path"])
-            if file_path.exists():
-                file_path.unlink()
+        # Delete file
+        file_path = Path(dataset["file_path"])
+        if file_path.exists():
+            file_path.unlink()
 
-            # Delete from database
-            datasets_collection.delete_one({"id": dataset_id})
-        else:
-            dataset = next((d for d in datasets_storage if d["id"] == dataset_id), None)
-            if not dataset:
-                raise HTTPException(status_code=404, detail="Dataset not found")
-
-            # Delete file
-            file_path = Path(dataset["file_path"])
-            if file_path.exists():
-                file_path.unlink()
-
-            # Remove from storage
-            datasets_storage[:] = [d for d in datasets_storage if d["id"] != dataset_id]
+        # Remove from storage
+        del datasets_storage[dataset_id]
 
         return {"message": "Dataset deleted successfully"}
     except Exception as e:
@@ -343,10 +299,7 @@ async def execute_query(query_request: Dict):
             raise HTTPException(status_code=400, detail="Dataset ID is required")
 
         # Get dataset
-        if db:
-            dataset = datasets_collection.find_one({"id": dataset_id})
-        else:
-            dataset = next((d for d in datasets_storage if d["id"] == dataset_id), None)
+        dataset = datasets_storage.get(dataset_id)
 
         if not dataset:
             raise HTTPException(status_code=404, detail="Dataset not found")
@@ -364,10 +317,7 @@ async def execute_query(query_request: Dict):
             "execution_time": result.get("execution_time", 0)
         }
 
-        if db:
-            queries_collection.insert_one(query_doc)
-        else:
-            queries_storage.append(query_doc)
+        queries_storage.append(query_doc)
 
         return result
 
@@ -378,10 +328,7 @@ async def execute_query(query_request: Dict):
 async def get_query_history():
     """Get query history"""
     try:
-        if db:
-            queries = list(queries_collection.find({}, {"_id": 0}).sort("timestamp", -1).limit(50))
-        else:
-            queries = sorted(queries_storage, key=lambda x: x["timestamp"], reverse=True)[:50]
+        queries = sorted(queries_storage, key=lambda x: x["timestamp"], reverse=True)[:50]
         return {"queries": queries}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -494,10 +441,7 @@ async def create_visualization(viz_request: Dict):
             raise HTTPException(status_code=400, detail="Dataset ID is required")
 
         # Get dataset
-        if db:
-            dataset = datasets_collection.find_one({"id": dataset_id})
-        else:
-            dataset = next((d for d in datasets_storage if d["id"] == dataset_id), None)
+        dataset = datasets_storage.get(dataset_id)
 
         if not dataset:
             raise HTTPException(status_code=404, detail="Dataset not found")
